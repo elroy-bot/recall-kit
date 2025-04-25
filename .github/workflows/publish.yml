@@ -1,33 +1,77 @@
-name: Publish Python Package
+name: Create and Publish Release
 
 on:
-  release:
-    types: [created]
+  push:
+    tags:
+      - 'v*'  # Trigger on version tags
+    branches-ignore:
+      - '**'  # Ignore branch pushes, only trigger on tags
 
 jobs:
-  deploy:
+  publish-pypi:
+    environment:
+      name: pypi
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+      id-token: write
+
     steps:
     - uses: actions/checkout@v3
-
-    - name: Set up Python
-      uses: actions/setup-python@v4
       with:
-        python-version: '3.x'
-
-    - name: Install uv
-      run: |
-        curl -LsSf https://astral.sh/uv/install.sh | sh
-        echo "$HOME/.cargo/bin" >> $GITHUB_PATH
-
-    - name: Build package
-      run: |
-        uv pip install build
-        python -m build
+        fetch-depth: 0
+    - uses: ./.github/actions/build-elroy
 
     - name: Publish to PyPI
       env:
-        PYPI_API_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
+        TWINE_USERNAME: __token__
+        TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
       run: |
+        pip install --user uv
+        uv venv
+        source .venv/bin/activate
+        uv pip install build
+        python -m build
         uv pip install twine
-        python -m twine upload --repository pypi dist/* -u __token__ -p $PYPI_API_TOKEN
+        twine upload dist/*
+
+  create-github-release:
+    environment:
+      name: pypi
+    needs: [publish-pypi]
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+      with:
+        fetch-depth: 0
+
+    - name: Create GitHub Release
+      uses: actions/create-release@v1
+      with:
+        tag_name: ${{ github.ref }}
+        release_name: Release ${{ github.ref }}
+        draft: false
+        prerelease: false
+        body_path: CHANGELOG.md
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  update-stable-and-deploy-branch:
+    environment:
+      name: pypi
+    needs: [create-github-release]
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+      with:
+        fetch-depth: 0
+    - name: Update stable branch
+      run: |
+        git config --global user.name 'GitHub Actions'
+        git config --global user.email 'actions@github.com'
+        git checkout stable || git checkout -b stable
+        git reset --hard ${GITHUB_REF}
+        git push -f origin stable
+        git checkout deploy || git checkout -b deploy
+        git reset --hard ${GITHUB_REF}
+        git push -f origin deploy
