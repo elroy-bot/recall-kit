@@ -23,13 +23,13 @@ pip install -r scripts/requirements.txt
 To bump the version and create a new release:
 
 ```bash
-# For a patch release (0.1.0 -> 0.1.1)
+# For a patch release (0.0.1 -> 0.1.1)
 python scripts/release.py patch
 
-# For a minor release (0.1.0 -> 0.2.0)
+# For a minor release (0.0.1 -> 0.2.0)
 python scripts/release.py minor
 
-# For a major release (0.1.0 -> 1.0.0)
+# For a major release (0.0.1 -> 1.0.0)
 python scripts/release.py major
 ```
 

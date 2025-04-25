@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "recall-kit"
-version = "0.1.0"
+version = "0.0.1"
 description = "Lightweight memory integration for LLMs"
 readme = "README.md"
 authors = [

@@ -58,7 +58,7 @@ We provide a release script that automates version bumping and release creation:
 # Install script dependencies
 uv pip install -r scripts/requirements.txt
 
-# Create a patch release (0.1.0 -> 0.1.1)
+# Create a patch release (0.0.1 -> 0.1.1)
 python scripts/release.py patch
 
 # Or for minor/major releases
@@ -79,7 +79,7 @@ See `scripts/README.md` for more details.
 If you prefer to release manually:
 
 1. Update the version in `pyproject.toml` and `recall_kit/__init__.py`
-2. Create a new release on GitHub with a tag matching the version (e.g., `v0.1.0`)
+2. Create a new release on GitHub with a tag matching the version (e.g., `v0.0.1`)
 3. The GitHub workflow will automatically build and publish the package to PyPI
 
 ## License
