@@ -44,8 +44,8 @@ include = [
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-python_files = "test_*.py"
-python_functions = "test_*"
+python_files = ["test_*.py"]
+python_functions = ["test_*"]
 
 [tool.black]
 line-length = 88
@@ -54,3 +54,7 @@ target-version = ["py37"]
 [tool.isort]
 profile = "black"
 line_length = 88
+
+[tool.uv]
+# uv-specific configurations
+python = { requires-python = ">=3.7" }
