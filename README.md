@@ -74,6 +74,56 @@ memory_model = MemoryEnabledModel(
 response = memory_model.generate("What were we talking about earlier?")
 ```
 
+### Command Line Interface
+
+Use recall-kit directly from the command line:
+
+```bash
+# Start a chat session with memory enabled
+recall-chat
+
+# Configure memory settings
+recall-config set memory.source vector_store
+recall-config set memory.max_items 50
+```
+
+### llm Package Integration
+
+Integrate with [Simon Willison's llm package](https://github.com/simonw/llm):
+
+```python
+# Install the plugin
+pip install recall-kit-llm
+
+# Use in llm
+import llm
+from recall_kit_llm import RecallPlugin
+
+# The plugin will automatically add memory capabilities to llm
+response = llm.prompt("What did we discuss earlier?")
+```
+
+### LiteLLM Integration
+
+Add memory to [LiteLLM](https://github.com/BerriAI/litellm) for multi-model support:
+
+```python
+from litellm import completion
+from recall_kit.integrations import setup_litellm_memory
+
+# Configure memory for litellm
+setup_litellm_memory(
+    memory_source="vector_store",
+    recall_strategy="semantic_search"
+)
+
+# Use litellm with memory capabilities
+response = completion(
+    model="gpt-4",
+    messages=[{"role": "user", "content": "What were we discussing earlier?"}]
+)
+```
+
 ## Memory Sources
 
 recall-kit uses [pluggy](https://pluggy.readthedocs.io/) to allow for flexible memory source specification:
