@@ -1,215 +1,245 @@
-# recall-kit
+# Recall Kit: Lightweight memory integrations for LLM's
 
-A flexible toolbox for adding memory capabilities to Large Language Models (LLMs).
 
-## Overview
+## Quickstart
 
-recall-kit provides a comprehensive set of tools and interfaces for integrating memory capabilities into LLM applications. Unlike other memory solutions, recall-kit doesn't prescribe a single approach to memory management. Instead, it offers a flexible framework that allows developers to implement memory in ways that best suit their specific use cases.
+Recall Kit provides a variety of methods to integrate:
 
-## Key Features
+### As a toolset for AI agents:
+```bash
+# MCP
+uv pip install "recall-kit[mcp]"
+recall mcp show # prints MCP server settings
+```
 
-- **Flexibility First**: Choose the memory integration approach that works best for your application
-- **Multiple Integration Options**: Add memories via tools, Model Context Protocol (MCP), or an OpenAI-compatible model wrapper
-- **Pluggable Memory Sources**: Use the built-in plugin system to specify any memory source you need
-- **Customizable Recall Pipeline**: Define your own pipeline or use the defaults for memory retrieval and processing
-- **Extensible Architecture**: Built with extensibility in mind, allowing for easy customization at every level
-
-## Installation
 
 ```bash
-# Using pip
-pip install recall-kit
-
-# Using uv
-uv install recall-kit
+# Smolagents
+uv pip install "recall-kit[smolagents]"
 ```
 
-## Integration Options
-
-recall-kit offers multiple ways to integrate memory capabilities:
-
-### Tool-based Integration
-
-Add memory capabilities through function calls in your application:
-
 ```python
-from recall_kit import MemoryToolkit
+# Approach 1: Recall Kit as Smolagents Tools
+from smolagents import Agent
+from recall_kit.smolagents import RecallMemoryTool, CreateMemoryTool
+from recall_kit import RecallKit
 
-memory_tools = MemoryToolkit()
-memory_tools.store("User mentioned they prefer dark mode")
-relevant_memories = memory_tools.recall("user preferences")
-```
+# Initialize Recall Kit
+recall = RecallKit()
 
-### MCP Integration
-
-Expose memory capabilities through the Model Context Protocol:
-
-```python
-from recall_kit.integrations import MCPMemoryServer
-
-# Create and start an MCP server with memory capabilities
-memory_server = MCPMemoryServer()
-memory_server.start()
-
-# The server can now be connected to any MCP-compatible client
-```
-
-### Model Wrapper Integration
-
-Wrap your existing LLM with memory capabilities through an OpenAI-compatible endpoint:
-
-```python
-from recall_kit.integrations import MemoryEnabledModel
-
-# Create a memory-enabled wrapper around your model
-memory_model = MemoryEnabledModel(
-    base_model="your-existing-model",
-    memory_config={
-        "source": "vector_store",
-        "recall_strategy": "semantic_search"
-    }
+# Create memory tools
+agent = Agent(
+    tools=[RecallMemoryTool(recall_kit=recall), CreateMemoryTool(recall_kit=recall)],
+    system_prompt="You are an assistant with memory capabilities. Use the memory tools when appropriate."
 )
 
-# Use it like any OpenAI-compatible model
-response = memory_model.generate("What were we talking about earlier?")
+# Use the agent
+response = agent.run("Remember that I prefer dark mode for all applications.")
+print(response)
+
+# Approach 2: Recall Kit as a Custom AgentMemory
+from smolagents import Agent
+from recall_kit.smolagents import RecallKitAgentMemory
+
+# Create an agent with automatic memory
+agent = Agent(system_prompt="You are an assistant with perfect recall.")
+agent.memory = RecallKitAgentMemory(auto_consolidate=True)
+
+# Use the agent
+response = agent.run("What were we discussing earlier?")
+print(response)
 ```
 
-### Command Line Interface
+### As a OpenAI-compatible model wrapper
+```bash
+uv pip install recall-kit
+recall serve # Exposes model server, which can be used in any service you like.
+```
 
-Use recall-kit directly from the command line:
+
+
+### From the command line
+ Standalone CLI
+```bash
+# Install
+uv pip install recall-kit
+
+recall chat # interactive chat
+recall remember < "I need to go to the grocery store" # Create memories from stdin
+recall ingest /your_docs --include "*md" # Ingest documents from within dir
+```
 
 ```bash
-# Start a chat session with memory enabled
-recall-chat
-
-# Configure memory settings
-recall-config set memory.source vector_store
-recall-config set memory.max_items 50
+# Extension to LLM
+uv pip install llm-recall-kit
+llm -m recall
 ```
 
-### llm Package Integration
 
-Integrate with [Simon Willison's llm package](https://github.com/simonw/llm):
 
-```python
-# Install the plugin
-pip install recall-kit-llm
 
-# Use in llm
-import llm
-from recall_kit_llm import RecallPlugin
 
-# The plugin will automatically add memory capabilities to llm
-response = llm.prompt("What did we discuss earlier?")
+
+recall-kit is built with the following principles:
+
+
+1. **Versatility**: Easily any reasonable integration path, including:
+    -  MCP
+    - Agent tools for [Smolagents](https://github.com/huggingface/smolagents), and others
+    - OpenAI compatible endpoint
+    - CLI tools like [llm](https://github.com/simonw/llm)
+
+1. **Small footprint**: Do not require a large presence in the surrounding application, require minimal dependencies.
+
+1. **Composability**: Allow user to customize all stages of memory capture and recall.
+
+1. **Vanilla data stores**: recall-kit supports `Sqlite` (with [sqlite-vec](https://github.com/asg017/sqlite-vec)) and Postgres (with [pgvector](https://github.com/pgvector/pgvector)). It does not leverage dedicated graph databases.
+
+1. **Show your work**: Always make the recalled context accessible to the user.
+
+### Memory structure
+
+```mermaid
+graph BT
+    %% Source documents at the bottom
+    S0[Source data available for precise recall] ---- C0[Summarized memories provide unique information for relevance and search]
+    S1[Source Document 1] --> M1[Memory 1]
+    S2[Source Document 2] --> M2[Memory 2]
+    S3[Source Document 3] --> M3[Memory 3]
+    S4[Source Document 4] --> M4[Memory 4]
+    S5[Source Document 5] --> M5[Memory 5]
+
+    %% Memories consolidate to form root memories at the top
+    M1 --> CM1[Consolidated Memory A]
+    M2 --> CM1
+    M3 --> CM1
+    M4 --> CM2[Consolidated Memory B]
+    M5 --> CM2
+
+    %% Example of a source document that creates an unconsolidated memory
+    %% directly at the root level (no middle layer)
+    S6[Source Document 6] ---> UM1[Unconsolidated Memory]
+
+    %% Use longer arrow for S6 to UM1 to emphasize the direct connection
+
+    %% Styling with improved contrast
+    classDef source fill:#ffb3b3,stroke:#333,stroke-width:1px,color:#000,font-weight:bold
+    classDef memory fill:#b3b3ff,stroke:#333,stroke-width:1px,color:#000,font-weight:bold
+    classDef consolidated fill:#b3ffb3,stroke:#333,stroke-width:2px,color:#000,font-weight:bold
+    classDef unconsolidated fill:#b3ffb3,stroke:#333,stroke-width:2px,stroke-dasharray:5 5,color:#000,font-weight:bold
+
+    class S1,S2,S3,S4,S5,S6 source
+    class M1,M2,M3,M4,M5 memory
+    class CM1,CM2 consolidated
+    class UM1 unconsolidated
 ```
 
-### LiteLLM Integration
+In recall-kit, memories are free text excerpts, linked to source data. As more memories are added, those with similar embeddings are consolidated. This creates a consistent, curated memory collection available for LLM searching.
 
-Add memory to [LiteLLM](https://github.com/BerriAI/litellm) for multi-model support:
+Source data is retained, linked to memories, and made available when more precise recall is required.
 
-```python
-from litellm import completion
-from recall_kit.integrations import setup_litellm_memory
 
-# Configure memory for litellm
-setup_litellm_memory(
-    memory_source="vector_store",
-    recall_strategy="semantic_search"
-)
 
-# Use litellm with memory capabilities
-response = completion(
-    model="gpt-4",
-    messages=[{"role": "user", "content": "What were we discussing earlier?"}]
-)
+### Life of a memory
+
+#### Creating and managing memories
+
+```mermaid
+flowchart BT
+    %% Sources at the bottom
+    CM["Chat messages"] --> MC["Memory created"]
+    SD["Source documents"] --> MC
+    LLM["LLM tool calls"] --> MC
+
+
+
+    %% Memory created to Embeddings Store
+    MC --> |"Embeddings calculated"| ES["Embeddings Store"]
+
+    %% Consolidation process
+    ES --> CS["Clusters of similar memories are consolidated"]
+    CS --> MC
+
+    %% Styling
+    classDef source fill:#ffb3b3,stroke:#333,stroke-width:1px,color:#000,font-weight:bold
+    classDef process fill:#b3b3ff,stroke:#333,stroke-width:1px,color:#000,font-weight:bold
+    classDef store fill:#b3ffb3,stroke:#333,stroke-width:1px,color:#000,font-weight:bold,shape:cylinder
+
+    class CM,SD,LLM source
+    class MC,CS,CA process
+    class ES store
 ```
 
-## Memory Sources
 
-recall-kit uses [pluggy](https://pluggy.readthedocs.io/) to allow for flexible memory source specification:
+1. Capture: Memories are created, either from chat transcript or any other kind of document
+1. Embeddings are calculated and stored
+1. Consolidation: Redundant memories are consolidated with each other, forming new memories.
 
-```python
-from recall_kit import register_memory_source
 
-@register_memory_source("my_custom_source")
-class CustomMemorySource:
-    def store(self, memory):
-        # Implementation for storing memories
-        pass
+#### Recalling memories
 
-    def retrieve(self, query, **params):
-        # Implementation for retrieving memories
-        pass
+```mermaid
+flowchart LR
+    %% Main components
+    RQ["Requests"] --> CE["Calculate embeddings"]
+    CE --> ES["Embeddings Store"]
+    ES --> FR["Filter for relevancy"]
+    FR --> RR["Rerank"]
+    RR --> MAR["Memory augmented Request"]
+    RQ --> MAR
+    MAR --> API["OpenAI compatible API"]
+
+    %% Styling
+    classDef request fill:#b3b3ff,stroke:#333,stroke-width:1px,color:#000,font-weight:bold
+    classDef process fill:#b3b3ff,stroke:#333,stroke-width:1px,color:#000,font-weight:bold
+    classDef store fill:#b3ffb3,stroke:#333,stroke-width:1px,color:#000,font-weight:bold,shape:cylinder
+    classDef api fill:#ffb3b3,stroke:#333,stroke-width:1px,color:#000,font-weight:bold
+
+    class RQ,MAR request
+    class CE,FR,RR process
+    class ES store
+    class API api
 ```
 
-Built-in memory sources include:
-- Vector stores (using various embedding models)
-- Simple in-memory storage
-- File-based persistence
-- Database integrations
+1. Retrieval: During LLM chat, memories are searched and candidates are retrieved
+1. Filtering: Results are filtered for relevancy.
+1. Re-ranking: Results are re-ranked
+1. Integration: Retrieved memories are incorporated into LLM requests.
+1. Source retrieval: If necessary, retrieve source documents for more precise retrieval
 
-## Recall Pipeline
 
-The recall pipeline in recall-kit consists of customizable stages:
+`recall-kit` provides sensible defaults for all of these steps, but all of them can be customized.
 
-1. **Retrieve**: Fetch candidate memories from the memory source
-2. **Filter**: Remove irrelevant or low-quality memories
-3. **Rerank**: Order memories by relevance or importance
-4. **Reflect**: Generate meta-information or summaries about retrieved memories
-5. **Store**: Optionally store new derived memories
+## Customizing
 
-Each stage can be customized:
+The memory needs of an LLM can vary widely - optimizations might be needed in summarization, consolidation, relevance filtering, or in combinging recalled content with chat requests. More processing will result in richer responses, at the cost of higher latency.
 
-```python
-from recall_kit import RecallPipeline
-from recall_kit.filters import TimeDecayFilter
-from recall_kit.rankers import RelevanceRanker
+`recall-kit` comprises of the following components:
 
-pipeline = RecallPipeline(
-    retriever="semantic_search",
-    filters=[TimeDecayFilter(half_life_days=7)],
-    ranker=RelevanceRanker(),
-    reflector="summarize_key_points",
-    store_reflections=True
-)
+- SQLAlchemy
+    - Default: sqlite3
+    - add postgres support with `uv pip install "recall-kit[postgres]"`
+- Vector store: A K/V supporting `search`, `remove`, and `upsert`.
+    - Default: sqlite-vec
+    - postgres / pgvector support with `uv pip install "recall-kit[postgres]"`
+- Functions:
+    - `embedding`: LLM
+    - `completion`: Chat completion client
+    - Memory source: Combination of:
+        - A class
+        - A a `to_memory` function, returning text and a title
+        - An `address` field
+    - The following functions:
+        - `retrieve`: Accepts query text, and a chat completion request, returns a collection of memory instances
+        - `filter` (optional): Accepts a memory and a chat completion request, returns a boolean.
+        - `rerank` (optional): Accepts a list of memories, and a chat completion request. Returns a list of memories.
+        - `augment`: Accepts a list of memories and a chat completion request, returns a chat completion request
 
-memories = pipeline.execute("What does the user like?")
-```
 
-## Default Configuration
+TODO: description of how plugin system will work.
 
-recall-kit comes with sensible defaults that work out of the box, while allowing for customization at any level:
 
-```python
-from recall_kit import MemoryManager
+# Roadmap
 
-# Use with all defaults
-memory = MemoryManager()
-
-# Or customize as needed
-memory = MemoryManager(
-    source="vector_store",
-    embedding_model="sentence-transformers/all-MiniLM-L6-v2",
-    pipeline_config={
-        "max_memories": 10,
-        "filter_threshold": 0.7
-    }
-)
-```
-
-## Examples
-
-Check out the `examples/` directory for complete usage examples:
-
-- Basic memory storage and retrieval
-- Custom memory sources
-- Advanced recall pipeline configuration
-- Integration with popular LLM frameworks
-
-## Contributing
-
-Contributions are welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for details on how to get started.
-
-## License
-
-MIT
+There features are not in the current version of recall-kit, but maybe added in the future:
+- langchain integration
