@@ -1,86 +1,164 @@
 # recall-kit
 
-Lightweight memory integration for LLMs
+A flexible toolbox for adding memory capabilities to Large Language Models (LLMs).
+
+## Overview
+
+recall-kit provides a comprehensive set of tools and interfaces for integrating memory capabilities into LLM applications. Unlike other memory solutions, recall-kit doesn't prescribe a single approach to memory management. Instead, it offers a flexible framework that allows developers to implement memory in ways that best suit their specific use cases.
+
+## Key Features
+
+- **Flexibility First**: Choose the memory integration approach that works best for your application
+- **Multiple Integration Options**: Add memories via tools, Model Context Protocol (MCP), or an OpenAI-compatible model wrapper
+- **Pluggable Memory Sources**: Use the built-in plugin system to specify any memory source you need
+- **Customizable Recall Pipeline**: Define your own pipeline or use the defaults for memory retrieval and processing
+- **Extensible Architecture**: Built with extensibility in mind, allowing for easy customization at every level
 
 ## Installation
 
-You can install the package using uv:
-
 ```bash
+# Using pip
+pip install recall-kit
+
+# Using uv
 uv install recall-kit
 ```
 
-Or using pip:
+## Integration Options
 
-```bash
-pip install recall-kit
-```
+recall-kit offers multiple ways to integrate memory capabilities:
 
-## Usage
+### Tool-based Integration
+
+Add memory capabilities through function calls in your application:
 
 ```python
-from recall_kit import hello_world
+from recall_kit import MemoryToolkit
 
-# Default greeting
-message = hello_world()
-print(message)  # Output: Hello, World! Welcome to recall-kit.
-
-# Custom greeting
-message = hello_world("Python")
-print(message)  # Output: Hello, Python! Welcome to recall-kit.
+memory_tools = MemoryToolkit()
+memory_tools.store("User mentioned they prefer dark mode")
+relevant_memories = memory_tools.recall("user preferences")
 ```
 
-## Development
+### MCP Integration
 
-### Setup
+Expose memory capabilities through the Model Context Protocol:
 
-1. Clone the repository
-2. Install development dependencies with uv:
-   ```bash
-   uv install -e ".[dev]"
-   ```
+```python
+from recall_kit.integrations import MCPMemoryServer
 
-### Running Tests
+# Create and start an MCP server with memory capabilities
+memory_server = MCPMemoryServer()
+memory_server.start()
 
-```bash
-uv run pytest
+# The server can now be connected to any MCP-compatible client
 ```
 
-## Publishing to PyPI
+### Model Wrapper Integration
 
-This package is automatically published to PyPI when a new GitHub release is created.
+Wrap your existing LLM with memory capabilities through an OpenAI-compatible endpoint:
 
-### Automated Release Process
+```python
+from recall_kit.integrations import MemoryEnabledModel
 
-We provide a release script that automates version bumping and release creation:
+# Create a memory-enabled wrapper around your model
+memory_model = MemoryEnabledModel(
+    base_model="your-existing-model",
+    memory_config={
+        "source": "vector_store",
+        "recall_strategy": "semantic_search"
+    }
+)
 
-```bash
-# Install script dependencies
-uv pip install -r scripts/requirements.txt
-
-# Create a patch release (0.0.1 -> 0.1.1)
-python scripts/release.py patch
-
-# Or for minor/major releases
-python scripts/release.py minor
-python scripts/release.py major
+# Use it like any OpenAI-compatible model
+response = memory_model.generate("What were we talking about earlier?")
 ```
 
-The script will:
-1. Update versions in all necessary files
-2. Commit the changes
-3. Create and push a git tag
-4. Trigger the GitHub workflow to publish to PyPI
+## Memory Sources
 
-See `scripts/README.md` for more details.
+recall-kit uses [pluggy](https://pluggy.readthedocs.io/) to allow for flexible memory source specification:
 
-### Manual Release Process
+```python
+from recall_kit import register_memory_source
 
-If you prefer to release manually:
+@register_memory_source("my_custom_source")
+class CustomMemorySource:
+    def store(self, memory):
+        # Implementation for storing memories
+        pass
 
-1. Update the version in `pyproject.toml` and `recall_kit/__init__.py`
-2. Create a new release on GitHub with a tag matching the version (e.g., `v0.0.1`)
-3. The GitHub workflow will automatically build and publish the package to PyPI
+    def retrieve(self, query, **params):
+        # Implementation for retrieving memories
+        pass
+```
+
+Built-in memory sources include:
+- Vector stores (using various embedding models)
+- Simple in-memory storage
+- File-based persistence
+- Database integrations
+
+## Recall Pipeline
+
+The recall pipeline in recall-kit consists of customizable stages:
+
+1. **Retrieve**: Fetch candidate memories from the memory source
+2. **Filter**: Remove irrelevant or low-quality memories
+3. **Rerank**: Order memories by relevance or importance
+4. **Reflect**: Generate meta-information or summaries about retrieved memories
+5. **Store**: Optionally store new derived memories
+
+Each stage can be customized:
+
+```python
+from recall_kit import RecallPipeline
+from recall_kit.filters import TimeDecayFilter
+from recall_kit.rankers import RelevanceRanker
+
+pipeline = RecallPipeline(
+    retriever="semantic_search",
+    filters=[TimeDecayFilter(half_life_days=7)],
+    ranker=RelevanceRanker(),
+    reflector="summarize_key_points",
+    store_reflections=True
+)
+
+memories = pipeline.execute("What does the user like?")
+```
+
+## Default Configuration
+
+recall-kit comes with sensible defaults that work out of the box, while allowing for customization at any level:
+
+```python
+from recall_kit import MemoryManager
+
+# Use with all defaults
+memory = MemoryManager()
+
+# Or customize as needed
+memory = MemoryManager(
+    source="vector_store",
+    embedding_model="sentence-transformers/all-MiniLM-L6-v2",
+    pipeline_config={
+        "max_memories": 10,
+        "filter_threshold": 0.7
+    }
+)
+```
+
+## Examples
+
+Check out the `examples/` directory for complete usage examples:
+
+- Basic memory storage and retrieval
+- Custom memory sources
+- Advanced recall pipeline configuration
+- Integration with popular LLM frameworks
+
+## Contributing
+
+Contributions are welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for details on how to get started.
 
 ## License
 
