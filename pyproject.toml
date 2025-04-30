@@ -16,9 +16,20 @@ classifiers = [
     "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
 ]
-requires-python = ">=3.7"
+requires-python = ">=3.10"
 dependencies = [
     "importlib-resources",
+    "pydantic>=2.0.0",
+    "sqlalchemy>=2.0.0",
+    "openai>=1.0.0",
+    "numpy>=1.20.0",
+    "click>=8.0.0",
+    "sqlite-vec>=0.1.6",
+    "typing-extensions>=4.0.0",
+    "pytest",
+    "litellm",
+    "sqlmodel",
+    "toolz",
 ]
 
 [project.optional-dependencies]
@@ -27,11 +38,26 @@ dev = [
     "pytest-cov>=4.0.0",
     "black>=23.0.0",
     "isort>=5.0.0",
+    "mypy>=1.0.0",
+    "autoflake",
+    "vulture",
 ]
 
-[project.urls]
-"Homepage" = "https://github.com/username/recall-kit"
-"Bug Tracker" = "https://github.com/username/recall-kit/issues"
+mcp = [
+    "fastapi>=0.100.0",
+    "uvicorn>=0.20.0",
+]
+
+docs = [
+    "mkdocs",
+    "mkdocs-git-revision-date-localized-plugin",
+    "mkdocs-rss-plugin",
+    "mkdocs-git-revision-date-localized-plugin",
+    "mkdocs-rss-plugin" ,
+    "mkdocs-blog-plugin",
+    "mkdocs-material",
+]
+
 
 [tool.hatch.build.targets.wheel]
 packages = ["recall_kit"]
@@ -51,12 +77,15 @@ python_functions = ["test_*"]
 
 [tool.black]
 line-length = 88
-target-version = ["py37"]
+target-version = ["py39"]
 
 [tool.isort]
 profile = "black"
 line_length = 88
 
 [tool.uv]
-python = { requires-python = ">=3.7" }
+python = { requires-python = ">=3.9" }
 dev-dependencies = []
+
+[project.scripts]
+recall = "recall_kit.cli:main"
