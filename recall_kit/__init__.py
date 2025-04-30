@@ -1,7 +1,28 @@
 """
-recall-kit - Lightweight memory integration for LLMs
+Recall Kit: Lightweight memory integrations for LLMs.
+
+This package provides tools for creating, storing, retrieving, and consolidating
+memories for Large Language Models.
 """
 
-__version__ = "0.0.2"
+import warnings
 
-from .core import hello_world
+import litellm
+
+# Upstream warnings from litellm
+warnings.filterwarnings(
+    "ignore", message="Support for class-based `config` is deprecated"
+)
+warnings.filterwarnings(
+    "ignore", message="There is no current event loop", category=DeprecationWarning
+)
+
+from recall_kit.core import RecallKit
+from recall_kit.models import Memory, MemorySource
+from recall_kit.version import __version__
+
+from . import default_plugin
+
+litellm.suppress_debug_info = True
+
+__all__ = ["RecallKit", "Memory", "MemorySource", "__version__"]
