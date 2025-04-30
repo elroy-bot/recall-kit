@@ -1,452 +1,403 @@
 # How recall-kit Works
 
-This document provides a technical overview of recall-kit's architecture and internal workings.
+This document explains the core concepts of how recall-kit stores, processes, and retrieves memories.
 
-## Core Architecture
+## Memory Storage
 
-recall-kit is built around a modular architecture with several key components:
+### Memory Structure
+
+In recall-kit, a memory consists of:
 
 ```
-┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
-│  Integration    │     │     Core        │     │  Memory Sources │
-│  Interfaces     │◄────┤   Pipeline      │◄────┤  (via pluggy)   │
-└─────────────────┘     └─────────────────┘     └─────────────────┘
-        ▲                       ▲                       ▲
-        │                       │                       │
-        └───────────────┬───────┴───────────────┬───────┘
-                        │                       │
-                ┌───────┴───────┐       ┌───────┴───────┐
-                │  Processors   │       │   Utilities   │
-                │ (Filter/Rank) │       │ & Helpers     │
-                └───────────────┘       └───────────────┘
+┌─────────────────────────────────┐
+│ Memory                          │
+├─────────────────────────────────┤
+│ • Content (text)                │
+│ • Metadata (key-value pairs)    │
+│ • Embedding (vector)            │
+│ • ID (unique identifier)        │
+│ • Timestamp                     │
+└─────────────────────────────────┘
 ```
 
-### Component Responsibilities
+- **Content**: The actual text of the memory
+- **Metadata**: Additional information about the memory (e.g., source, category, tags)
+- **Embedding**: Vector representation of the memory for semantic search
+- **ID**: Unique identifier for the memory
+- **Timestamp**: When the memory was created or last updated
 
-1. **Integration Interfaces**: Adapters that expose recall-kit functionality through different interfaces (Python API, CLI, MCP, etc.)
-2. **Core Pipeline**: Orchestrates the memory retrieval and processing workflow
-3. **Memory Sources**: Pluggable backends for storing and retrieving memories
-4. **Processors**: Components that transform, filter, and rank memories
-5. **Utilities**: Helper functions and shared code used across the library
+### Storage Backends
 
-## Plugin System
+recall-kit supports multiple storage backends through its plugin system:
 
-recall-kit uses [pluggy](https://pluggy.readthedocs.io/) to implement its extensible memory source system:
+1. **In-Memory Storage**: Simple storage in RAM (default)
+2. **Vector Stores**: For semantic search capabilities
+   - Supports various vector databases (FAISS, Chroma, Pinecone, etc.)
+3. **File-Based Storage**: Persistent storage in files
+4. **Database Storage**: SQL or NoSQL database storage
+5. **Custom Storage**: Create your own storage backend
+
+When a memory is stored:
 
 ```python
-# Inside recall-kit core
-import pluggy
+# Simplified internal process
+def store_memory(content, metadata=None):
+    # 1. Generate a unique ID
+    memory_id = generate_uuid()
 
-# Define the hookspec namespace
-hookspec = pluggy.HookspecMarker("recall_kit")
-hookimpl = pluggy.HookimplMarker("recall_kit")
+    # 2. Create timestamp
+    timestamp = current_time_iso()
 
-class MemorySourceSpec:
-    """Specifications for memory source plugins."""
+    # 3. Generate embedding if using vector store
+    embedding = None
+    if using_vector_store():
+        embedding = embedding_model.embed(content)
 
-    @hookspec
-    def store(self, memory, metadata=None):
-        """Store a memory with optional metadata."""
+    # 4. Create memory object
+    memory = {
+        "id": memory_id,
+        "content": content,
+        "metadata": metadata or {},
+        "embedding": embedding,
+        "timestamp": timestamp
+    }
 
-    @hookspec
-    def retrieve(self, query, limit=10, **params):
-        """Retrieve memories based on a query."""
+    # 5. Store in the selected backend
+    storage_backend.store(memory)
 
-    @hookspec
-    def delete(self, memory_id):
-        """Delete a memory by ID."""
+    return memory_id
 ```
 
-Plugin implementations can then be registered:
+## Memory Retrieval
 
-```python
-# In a plugin implementation
-from recall_kit import hookimpl
+### Retrieval Process
 
-class VectorStoreMemorySource:
-    """Vector store implementation of memory source."""
+When retrieving memories, recall-kit follows this process:
 
-    @hookimpl
-    def store(self, memory, metadata=None):
-        # Implementation details...
-
-    @hookimpl
-    def retrieve(self, query, limit=10, **params):
-        # Implementation details...
-
-    @hookimpl
-    def delete(self, memory_id):
-        # Implementation details...
+```
+┌─────────────┐     ┌─────────────┐     ┌─────────────┐     ┌─────────────┐     ┌─────────────┐
+│             │     │             │     │             │     │             │     │             │
+│  Generate   │────▶│  Retrieve   │────▶│   Filter    │────▶│   Rerank    │────▶│   Reflect   │
+│  Query      │     │  Candidates │     │  Memories   │     │  Results    │     │  (Optional) │
+│             │     │             │     │             │     │             │     │             │
+└─────────────┘     └─────────────┘     └─────────────┘     └─────────────┘     └─────────────┘
 ```
 
-## Memory Pipeline in Detail
+1. **Generate Query**: Process the input query
+2. **Retrieve Candidates**: Get potential matches from storage
+3. **Filter Memories**: Remove irrelevant or low-quality memories
+4. **Rerank Results**: Order by relevance or importance
+5. **Reflect**: Optionally generate meta-information about results
 
-The recall pipeline is the core of recall-kit's functionality. Here's how each stage works:
+### Retrieval Methods
 
-### 1. Retrieve
+recall-kit supports multiple retrieval methods:
 
-The retrieve stage fetches candidate memories from the configured memory source:
+#### 1. Semantic Search (Default)
+
+Uses embeddings to find semantically similar memories:
 
 ```python
-def retrieve(query, source, params):
-    """Fetch candidate memories from the source."""
-    plugin_manager = get_plugin_manager()
-    source_plugin = plugin_manager.get_plugin(source)
+def semantic_search(query, memories, top_k=10):
+    # 1. Generate query embedding
+    query_embedding = embedding_model.embed(query)
 
-    # Call the plugin's retrieve method
-    candidates = source_plugin.retrieve(
-        query=query,
-        **params
-    )
+    # 2. Calculate similarity scores
+    scores = []
+    for memory in memories:
+        if memory["embedding"] is not None:
+            similarity = cosine_similarity(query_embedding, memory["embedding"])
+            scores.append((memory, similarity))
 
-    return candidates
+    # 3. Sort by similarity and return top_k
+    scores.sort(key=lambda x: x[1], reverse=True)
+    return [memory for memory, _ in scores[:top_k]]
 ```
 
-### 2. Filter
+#### 2. Keyword Search
 
-The filter stage removes irrelevant or low-quality memories:
+Uses text-based search for finding exact matches:
 
 ```python
-def apply_filters(memories, filters):
-    """Apply a series of filters to memories."""
-    result = memories
+def keyword_search(query, memories, top_k=10):
+    # Simple keyword matching
+    keywords = extract_keywords(query)
+    scores = []
 
-    for filter_fn in filters:
-        result = filter_fn(result)
+    for memory in memories:
+        score = 0
+        for keyword in keywords:
+            if keyword.lower() in memory["content"].lower():
+                score += 1
 
-    return result
+        if score > 0:
+            scores.append((memory, score))
+
+    # Sort by score and return top_k
+    scores.sort(key=lambda x: x[1], reverse=True)
+    return [memory for memory, _ in scores[:top_k]]
 ```
 
-Common filters include:
-- Relevance threshold filtering
-- Time-based decay
-- Duplicate removal
-- Content-based filtering
+#### 3. Hybrid Search
 
-### 3. Rerank
-
-The rerank stage orders memories by relevance or importance:
+Combines semantic and keyword search for better results:
 
 ```python
-def rerank(memories, ranker, query):
-    """Reorder memories using the specified ranker."""
-    if ranker is None:
-        return memories
+def hybrid_search(query, memories, top_k=10):
+    semantic_results = semantic_search(query, memories, top_k=top_k*2)
+    keyword_results = keyword_search(query, memories, top_k=top_k*2)
 
-    scores = ranker.score(memories, query)
+    # Combine and deduplicate results
+    combined = {}
+    for memory in semantic_results:
+        combined[memory["id"]] = {"memory": memory, "score": 0.7}
 
-    # Combine memories with scores and sort
-    ranked = sorted(
-        zip(memories, scores),
-        key=lambda x: x[1],
+    for memory in keyword_results:
+        if memory["id"] in combined:
+            combined[memory["id"]]["score"] += 0.3
+        else:
+            combined[memory["id"]] = {"memory": memory, "score": 0.3}
+
+    # Sort by combined score
+    sorted_results = sorted(
+        combined.values(),
+        key=lambda x: x["score"],
         reverse=True
     )
 
-    # Return just the memories in ranked order
-    return [memory for memory, _ in ranked]
+    return [item["memory"] for item in sorted_results[:top_k]]
 ```
 
-### 4. Reflect
+## Memory Filtering
 
-The reflect stage generates meta-information or summaries about retrieved memories:
+After retrieving candidate memories, recall-kit applies filters to remove irrelevant or low-quality memories:
+
+### Common Filters
+
+#### 1. Relevance Threshold Filter
+
+Removes memories below a certain relevance score:
 
 ```python
-def reflect(memories, reflector, query):
-    """Generate reflections on the retrieved memories."""
-    if reflector is None:
-        return memories, None
-
-    reflection = reflector.process(memories, query)
-
-    return memories, reflection
+def relevance_filter(memories, threshold=0.7):
+    return [
+        memory for memory in memories
+        if memory.get("relevance", 0) >= threshold
+    ]
 ```
 
-### 5. Store
+#### 2. Time Decay Filter
 
-The store stage optionally stores new derived memories:
+Reduces the importance of older memories:
 
 ```python
-def store_reflection(reflection, source, query):
-    """Store the reflection as a new memory if enabled."""
-    if reflection is None:
-        return
+def time_decay_filter(memories, half_life_days=7):
+    now = time.time()
+    filtered = []
 
-    plugin_manager = get_plugin_manager()
-    source_plugin = plugin_manager.get_plugin(source)
+    for memory in memories:
+        timestamp = parse_timestamp(memory.get("timestamp"))
+        age_days = (now - timestamp) / (24 * 60 * 60)
+        decay_factor = 2 ** (-age_days / half_life_days)
 
-    # Create a new memory from the reflection
-    new_memory = {
-        "content": reflection,
-        "metadata": {
-            "type": "reflection",
-            "query": query,
-            "timestamp": time.time()
-        }
+        # Apply decay to relevance score
+        memory["relevance"] = memory.get("relevance", 1.0) * decay_factor
+        filtered.append(memory)
+
+    return filtered
+```
+
+#### 3. Duplicate Filter
+
+Removes duplicate or nearly identical memories:
+
+```python
+def deduplication_filter(memories, similarity_threshold=0.95):
+    unique_memories = []
+
+    for memory in memories:
+        is_duplicate = False
+        for unique in unique_memories:
+            similarity = text_similarity(memory["content"], unique["content"])
+            if similarity > similarity_threshold:
+                is_duplicate = True
+                break
+
+        if not is_duplicate:
+            unique_memories.append(memory)
+
+    return unique_memories
+```
+
+## Memory Reranking
+
+After filtering, recall-kit reranks the memories to present the most relevant ones first:
+
+### Reranking Methods
+
+#### 1. Relevance Ranker (Default)
+
+Sorts memories by their relevance score:
+
+```python
+def relevance_ranker(memories):
+    return sorted(
+        memories,
+        key=lambda x: x.get("relevance", 0),
+        reverse=True
+    )
+```
+
+#### 2. Recency Ranker
+
+Prioritizes recent memories:
+
+```python
+def recency_ranker(memories):
+    return sorted(
+        memories,
+        key=lambda x: parse_timestamp(x.get("timestamp", 0)),
+        reverse=True
+    )
+```
+
+#### 3. Hybrid Ranker
+
+Combines multiple ranking factors:
+
+```python
+def hybrid_ranker(memories, relevance_weight=0.7, recency_weight=0.3):
+    now = time.time()
+
+    for memory in memories:
+        # Normalize recency (0-1 scale, 1 being most recent)
+        timestamp = parse_timestamp(memory.get("timestamp", 0))
+        age = now - timestamp
+        max_age = 30 * 24 * 60 * 60  # 30 days in seconds
+        recency = 1 - min(age / max_age, 1)
+
+        # Combine scores
+        relevance = memory.get("relevance", 0)
+        memory["combined_score"] = (
+            relevance * relevance_weight +
+            recency * recency_weight
+        )
+
+    return sorted(
+        memories,
+        key=lambda x: x.get("combined_score", 0),
+        reverse=True
+    )
+```
+
+## Reflection
+
+The final optional step in the recall pipeline is reflection, which generates meta-information about the retrieved memories:
+
+### Reflection Types
+
+#### 1. Summary Reflection
+
+Generates a summary of the retrieved memories:
+
+```python
+def summarize_memories(memories, query):
+    if not memories:
+        return None
+
+    # Combine memory contents
+    combined = "\n".join(memory["content"] for memory in memories)
+
+    # Generate summary using an LLM
+    prompt = f"""
+    Based on these memories:
+    {combined}
+
+    Provide a concise summary relevant to: {query}
+    """
+
+    return llm.generate(prompt)
+```
+
+#### 2. Key Points Reflection
+
+Extracts key points from the memories:
+
+```python
+def extract_key_points(memories, query):
+    if not memories:
+        return None
+
+    # Combine memory contents
+    combined = "\n".join(memory["content"] for memory in memories)
+
+    # Extract key points using an LLM
+    prompt = f"""
+    Based on these memories:
+    {combined}
+
+    Extract 3-5 key points relevant to: {query}
+    """
+
+    return llm.generate(prompt)
+```
+
+## Memory Pipeline in Action
+
+Here's how the entire pipeline works together:
+
+```python
+def recall(query, config=None):
+    config = config or default_config()
+
+    # 1. Retrieve candidate memories
+    candidates = retrieve_memories(
+        query,
+        source=config["source"],
+        method=config["retrieval_method"],
+        limit=config["max_candidates"]
+    )
+
+    # 2. Apply filters
+    filtered = candidates
+    for filter_fn in config["filters"]:
+        filtered = filter_fn(filtered)
+
+    # 3. Rerank results
+    ranked = config["ranker"](filtered)
+
+    # 4. Apply limit
+    limited = ranked[:config["max_results"]]
+
+    # 5. Generate reflection (if enabled)
+    reflection = None
+    if config["generate_reflection"]:
+        reflection = config["reflector"](limited, query)
+
+        # 6. Store reflection as a new memory (if enabled)
+        if config["store_reflections"] and reflection:
+            store_memory(
+                reflection,
+                metadata={
+                    "type": "reflection",
+                    "query": query
+                }
+            )
+
+    return {
+        "memories": limited,
+        "reflection": reflection
     }
-
-    # Store the new memory
-    source_plugin.store(new_memory)
 ```
 
-## Integration Methods
+## Customization
 
-### Tool-based Integration
+recall-kit's memory system is designed to be highly customizable:
 
-The tool-based integration provides a simple Python API:
+1. **Storage**: Choose or create custom storage backends
+2. **Retrieval**: Select or implement retrieval methods
+3. **Filtering**: Configure or create custom filters
+4. **Ranking**: Select or implement ranking algorithms
+5. **Reflection**: Enable/disable or customize reflection generation
 
-```python
-class MemoryToolkit:
-    def __init__(self, config=None):
-        self.config = config or default_config()
-        self.pipeline = RecallPipeline(self.config)
-        self.source = self.config.get("source", "in_memory")
-
-    def store(self, memory, metadata=None):
-        """Store a memory."""
-        plugin_manager = get_plugin_manager()
-        source_plugin = plugin_manager.get_plugin(self.source)
-        return source_plugin.store(memory, metadata)
-
-    def recall(self, query, **params):
-        """Recall memories related to the query."""
-        return self.pipeline.execute(query, **params)
-```
-
-### MCP Integration
-
-The MCP integration exposes memory capabilities through the Model Context Protocol:
-
-```python
-class MCPMemoryServer:
-    def __init__(self, config=None):
-        self.config = config or default_config()
-        self.toolkit = MemoryToolkit(self.config)
-
-    def start(self, host="localhost", port=8000):
-        """Start the MCP server."""
-        server = MCPServer(host, port)
-
-        # Register tools
-        server.register_tool(
-            "store_memory",
-            self._store_memory,
-            {"memory": str, "metadata": dict}
-        )
-
-        server.register_tool(
-            "recall_memories",
-            self._recall_memories,
-            {"query": str, "params": dict}
-        )
-
-        # Start the server
-        server.start()
-
-    def _store_memory(self, memory, metadata=None):
-        """MCP tool implementation for storing memories."""
-        return self.toolkit.store(memory, metadata)
-
-    def _recall_memories(self, query, params=None):
-        """MCP tool implementation for recalling memories."""
-        return self.toolkit.recall(query, **(params or {}))
-```
-
-### Model Wrapper Integration
-
-The model wrapper provides an OpenAI-compatible interface:
-
-```python
-class MemoryEnabledModel:
-    def __init__(self, base_model, memory_config=None):
-        self.base_model = base_model
-        self.memory_config = memory_config or {}
-        self.toolkit = MemoryToolkit(self.memory_config)
-
-    def generate(self, prompt, **params):
-        """Generate a response with memory augmentation."""
-        # Recall relevant memories
-        memories = self.toolkit.recall(prompt)
-
-        # Format memories as context
-        context = self._format_memories_as_context(memories)
-
-        # Augment the prompt with memory context
-        augmented_prompt = f"{context}\n\n{prompt}"
-
-        # Call the base model with the augmented prompt
-        return self._call_base_model(augmented_prompt, **params)
-
-    def _format_memories_as_context(self, memories):
-        """Format memories as context for the model."""
-        if not memories:
-            return ""
-
-        formatted = ["Here are some relevant memories:"]
-        for i, memory in enumerate(memories, 1):
-            formatted.append(f"{i}. {memory['content']}")
-
-        return "\n".join(formatted)
-
-    def _call_base_model(self, prompt, **params):
-        """Call the base model with the given prompt."""
-        # Implementation depends on the base model type
-        # This is a simplified example
-        return some_model_api.generate(prompt, **params)
-```
-
-### Command Line Interface
-
-The CLI is implemented using a command-line parser like argparse or click:
-
-```python
-def main():
-    """Main entry point for the CLI."""
-    parser = argparse.ArgumentParser(description="recall-kit CLI")
-    subparsers = parser.add_subparsers(dest="command")
-
-    # Chat command
-    chat_parser = subparsers.add_parser("chat", help="Start a chat session")
-    chat_parser.add_argument("--model", default="gpt-3.5-turbo", help="Model to use")
-
-    # Config command
-    config_parser = subparsers.add_parser("config", help="Configure settings")
-    config_parser.add_argument("action", choices=["get", "set"], help="Action to perform")
-    config_parser.add_argument("key", help="Configuration key")
-    config_parser.add_argument("value", nargs="?", help="Configuration value (for set)")
-
-    # Parse arguments
-    args = parser.parse_args()
-
-    # Handle commands
-    if args.command == "chat":
-        start_chat_session(args.model)
-    elif args.command == "config":
-        if args.action == "get":
-            get_config(args.key)
-        elif args.action == "set":
-            set_config(args.key, args.value)
-```
-
-## Customization Points
-
-recall-kit provides several key customization points:
-
-### 1. Memory Sources
-
-Create custom memory sources by implementing the memory source plugin interface:
-
-```python
-from recall_kit import register_memory_source
-
-@register_memory_source("my_database")
-class DatabaseMemorySource:
-    def __init__(self, connection_string):
-        self.connection_string = connection_string
-        self.db = connect_to_db(connection_string)
-
-    def store(self, memory, metadata=None):
-        # Store memory in database
-
-    def retrieve(self, query, limit=10, **params):
-        # Retrieve memories from database
-```
-
-### 2. Custom Filters
-
-Create custom filters to control which memories are included:
-
-```python
-from recall_kit.filters import register_filter
-
-@register_filter("sentiment")
-class SentimentFilter:
-    def __init__(self, min_sentiment=0.0):
-        self.min_sentiment = min_sentiment
-        self.analyzer = SentimentAnalyzer()
-
-    def __call__(self, memories):
-        """Filter memories based on sentiment score."""
-        return [
-            memory for memory in memories
-            if self.analyzer.analyze(memory["content"]) >= self.min_sentiment
-        ]
-```
-
-### 3. Custom Rankers
-
-Create custom rankers to control memory ordering:
-
-```python
-from recall_kit.rankers import register_ranker
-
-@register_ranker("personalization")
-class PersonalizationRanker:
-    def __init__(self, user_profile):
-        self.user_profile = user_profile
-
-    def score(self, memories, query):
-        """Score memories based on user profile relevance."""
-        scores = []
-        for memory in memories:
-            relevance = self._calculate_user_relevance(memory, self.user_profile)
-            scores.append(relevance)
-
-        return scores
-```
-
-### 4. Custom Reflectors
-
-Create custom reflectors to generate meta-information:
-
-```python
-from recall_kit.reflectors import register_reflector
-
-@register_reflector("key_points")
-class KeyPointsReflector:
-    def __init__(self, model="gpt-3.5-turbo"):
-        self.model = model
-
-    def process(self, memories, query):
-        """Extract key points from memories."""
-        combined = "\n".join(memory["content"] for memory in memories)
-
-        prompt = f"""
-        Based on these memories:
-        {combined}
-
-        Extract 3-5 key points relevant to: {query}
-        """
-
-        # Use an LLM to generate the reflection
-        response = some_llm_api.generate(prompt, model=self.model)
-
-        return response
-```
-
-## Performance Considerations
-
-recall-kit is designed with performance in mind:
-
-1. **Lazy Loading**: Plugins and components are loaded only when needed
-2. **Caching**: Results can be cached at various levels of the pipeline
-3. **Batching**: Operations can be batched for efficiency
-4. **Async Support**: Key operations support async/await for non-blocking I/O
-5. **Streaming**: Large memory sets can be processed as streams
-
-## Security Considerations
-
-When using recall-kit, consider these security aspects:
-
-1. **Memory Isolation**: Ensure memories from different users/contexts don't leak
-2. **Data Privacy**: Be mindful of what is stored in memories
-3. **Authentication**: Secure MCP and API endpoints
-4. **Sanitization**: Validate and sanitize inputs to prevent injection attacks
-
-## Debugging and Monitoring
-
-recall-kit provides tools for debugging and monitoring:
-
-1. **Logging**: Comprehensive logging throughout the pipeline
-2. **Tracing**: Optional tracing of memory operations
-3. **Metrics**: Performance and usage metrics
-4. **Visualization**: Tools to visualize memory relationships and access patterns
+This flexibility allows you to tailor the memory system to your specific needs, whether you're building a chatbot, a knowledge management system, or any other application that benefits from memory capabilities.
