@@ -7,6 +7,7 @@ including the RecallKit class.
 
 from __future__ import annotations
 
+import datetime
 from typing import Any, Dict, List, Optional, Protocol, TypeVar, runtime_checkable
 
 import numpy as np
@@ -15,7 +16,7 @@ from pydantic import BaseModel, Field
 
 from recall_kit.models import Memory, Message, MessageSet
 
-from .constants import MESSAGES, MODEL, USER_ID
+from .constants import MESSAGES, MODEL, ROLE, SYSTEM, TOOL, USER_ID
 
 
 # Define type protocols for the callback functions
@@ -498,7 +499,7 @@ class RecallKit:
         """
 
         # Call the LLM to generate the consolidated memory
-        messages = [{"role": "user", "content": prompt}]
+        messages = [{ROLE: "user", "content": prompt}]
         # Try with response_format parameter (for OpenAI-compatible APIs)
         response = self.completion_fn(
             model=model,
@@ -534,7 +535,7 @@ class RecallKit:
         """
         # Extract the query from the last user message
         messages = request.get("messages", [])
-        user_messages = [m for m in messages if m.get("role") == "user"]
+        user_messages = [m for m in messages if m.get(ROLE) == "user"]
 
         if not user_messages:
             return []
@@ -579,12 +580,15 @@ class RecallKit:
         Compress messages to fit within the context window, by summarizing earlier messages.
 
         Creates memories from compressed messages that are dropped from the context.
+        Appends a summary of dropped messages to the earliest kept assistant message.
+        Creates a new message set with the kept messages and marks the old one inactive.
 
         Args:
             messages: List of messages to compress
             model: Model name to use for token counting
             target_token_count: Target number of tokens to keep
             max_message_age: Maximum age of messages to keep (None means no limit)
+            message_set_id: ID of the message set to update (if None, a new one will be created)
 
         Returns:
            Compressed messages
@@ -594,12 +598,14 @@ class RecallKit:
 
         from litellm import token_counter
 
+        from .constants import ASSISTANT
+
         if not messages:
             return []
 
         # Find system message if it exists
-        system_messages = [msg for msg in messages if msg.get("role") == "system"]
-        non_system_messages = [msg for msg in messages if msg.get("role") != "system"]
+        system_messages = [msg for msg in messages if msg.get(ROLE) == SYSTEM]
+        non_system_messages = [msg for msg in messages if msg.get(ROLE) != SYSTEM]
 
         # If no system message, we'll just work with all messages
         if system_messages:
@@ -617,7 +623,7 @@ class RecallKit:
         # Process messages in reverse order (newest first)
         for msg in reversed(non_system_messages):
             msg_content = msg.get("content", "")
-            msg_role = msg.get("role", "")
+            msg_role = msg.get(ROLE, "")
 
             # Calculate tokens for this message
             msg_token_count = token_counter(model=model, text=msg_content)
@@ -625,8 +631,8 @@ class RecallKit:
             # Check if we need to keep this message due to tool calls
             if (
                 len(kept_messages) > 0
-                and kept_messages[0].get("role") == "tool"
-                and msg_role == "assistant"
+                and kept_messages[0].get(ROLE) == TOOL
+                and msg_role == ASSISTANT
             ):
                 # If the last message kept was a tool call, we must keep the corresponding assistant message
                 kept_messages.appendleft(msg)
@@ -664,16 +670,75 @@ class RecallKit:
             )
 
             # Create a memory from the dropped messages
-            self.create_memory(
+            memory = self.create_memory(
                 text=dropped_text,
                 title=f"Compressed messages from conversation",
                 metadata={"compressed": True, "message_count": len(dropped_messages)},
             )
 
+            # Find the earliest kept assistant message to append the summary
+            earliest_assistant_msg = None
+            for msg in kept_messages:
+                if msg.get(ROLE) == ASSISTANT:
+                    earliest_assistant_msg = msg
+                    break
+
+            # If we found an assistant message, add a tool call and insert a tool results message
+            if earliest_assistant_msg:
+                # Create a new tool message with the summary
+                summary_content = f"[Context: {len(dropped_messages)} earlier messages were summarized: {memory.title}]"
+
+                # Create a tool message to insert after the earliest assistant message
+                tool_message = {
+                    "role": TOOL,
+                    "content": summary_content,
+                    "metadata": {"type": "summary", "memory_id": memory.id},
+                }
+
+                # Find the index of the earliest assistant message
+                earliest_assistant_idx = None
+                for i, msg in enumerate(kept_messages):
+                    if msg is earliest_assistant_msg:
+                        earliest_assistant_idx = i
+                        break
+
+                # Insert the tool message after the earliest assistant message
+                if earliest_assistant_idx is not None:
+                    kept_messages.insert(earliest_assistant_idx + 1, tool_message)
+
         # Construct the final message list
         result = list(kept_messages)
         if system_message:
             result.insert(0, system_message)
+
+        # Create a new message set with the kept messages and mark the old one inactive
+        if result:
+            # Store the messages in the database
+            message_objects = []
+            for msg in result:
+                message = self.create_message(
+                    role=msg.get(ROLE, ""),
+                    content=msg.get("content", ""),
+                    metadata=msg.get("metadata", {}),
+                )
+                message_objects.append(message)
+
+            # Create a new message set
+            message_ids = [msg.id for msg in message_objects]
+
+            # If we have an existing message set, mark it inactive
+            old_message_set = self.get_active_message_set()
+
+            if old_message_set:
+                old_message_set.active = False
+                self.storage.store_message_set(old_message_set)
+
+            # Create a new active message set
+            self.create_message_set(
+                message_ids=message_ids,
+                active=True,
+                metadata={"compressed": True},
+            )
 
         return result
 
@@ -747,7 +812,7 @@ class RecallKit:
             response: The chat completion response
         """
         messages = request.get("messages", [])
-        user_messages = [m for m in messages if m.get("role") == "user"]
+        user_messages = [m for m in messages if m.get(ROLE) == "user"]
         user_id = request.get("user_id")
 
         if not user_messages:
@@ -933,7 +998,7 @@ class RecallKit:
         # If there's only one user message and an active message set, add to it
         if (
             len(messages) == 1
-            and messages[0].get("role") == "user"
+            and messages[0].get(ROLE) == "user"
             and active_message_set
         ):
             # Create a new message for the user input
@@ -988,7 +1053,7 @@ class RecallKit:
 
             # Process each message
             for msg in messages:
-                role = msg.get("role", "")
+                role = msg.get(ROLE, "")
                 content = msg.get("content", "")
 
                 # Check if this message already exists in the active message set

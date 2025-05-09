@@ -1,5 +1,7 @@
 USER = "user"
 ASSISTANT = "assistant"
+TOOL = "tool"
+SYSTEM = "system"
 
 
 ROLE = "role"

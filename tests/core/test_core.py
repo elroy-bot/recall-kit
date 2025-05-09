@@ -263,6 +263,31 @@ def test_compress_messages(recall_kit):
     compressed_memories = [m for m in memories if m.metadata.get("compressed") is True]
     assert len(compressed_memories) > 0
 
+    # Check that a tool message with summary was added after the earliest assistant message
+    earliest_assistant_idx = None
+    for i, msg in enumerate(compressed):
+        if msg.get("role") == "assistant":
+            earliest_assistant_idx = i
+            break
+
+    # If we found an assistant message, check for a tool message after it
+    if earliest_assistant_idx is not None and earliest_assistant_idx + 1 < len(
+        compressed
+    ):
+        tool_msg = compressed[earliest_assistant_idx + 1]
+        assert tool_msg.get("role") == "tool"
+        assert "[Context:" in tool_msg.get("content", "")
+        assert "earlier messages were summarized" in tool_msg.get("content", "")
+        assert "type" in tool_msg.get("metadata", {})
+        assert tool_msg.get("metadata", {}).get("type") == "summary"
+
+    # Check that a new message set was created
+    message_sets = recall_kit.storage.get_all_message_sets()
+    compressed_sets = [
+        ms for ms in message_sets if ms.metadata.get("compressed") is True
+    ]
+    assert len(compressed_sets) > 0
+
 
 def test_compress_messages_with_age_limit(recall_kit):
     """Test compressing messages with an age limit."""
@@ -321,6 +346,18 @@ def test_compress_messages_with_age_limit(recall_kit):
     assert any(msg.get("content") == "Latest message" for msg in compressed)
     assert any(msg.get("content") == "Latest response" for msg in compressed)
 
+    # Check that a memory was created from the dropped messages
+    memories = recall_kit.storage.get_all_memories()
+    compressed_memories = [m for m in memories if m.metadata.get("compressed") is True]
+    assert len(compressed_memories) > 0
+
+    # Check that a new message set was created
+    message_sets = recall_kit.storage.get_all_message_sets()
+    compressed_sets = [
+        ms for ms in message_sets if ms.metadata.get("compressed") is True
+    ]
+    assert len(compressed_sets) > 0
+
 
 def test_compress_messages_tool_calls(recall_kit):
     """Test compressing messages with tool calls."""
@@ -348,3 +385,55 @@ def test_compress_messages_tool_calls(recall_kit):
             # The previous message should be an assistant message
             assert i > 0
             assert compressed[i - 1].get("role") == "assistant"
+
+    # Check that a new message set was created
+    message_sets = recall_kit.storage.get_all_message_sets()
+    compressed_sets = [
+        ms for ms in message_sets if ms.metadata.get("compressed") is True
+    ]
+    assert len(compressed_sets) > 0
+
+
+def test_compress_messages_with_existing_message_set(recall_kit):
+    """Test compressing messages with an existing message set."""
+
+    # Create a message set first
+    message1 = recall_kit.create_message(
+        role="user",
+        content="Initial message",
+    )
+    message2 = recall_kit.create_message(
+        role="assistant",
+        content="Initial response",
+    )
+
+    message_set = recall_kit.create_message_set(
+        message_ids=[message1.id, message2.id],
+        active=True,
+    )
+
+    # Create messages to compress
+    messages = [
+        {"role": "system", "content": "You are a helpful assistant."},
+        {"role": "user", "content": "Hello, how are you?"},
+        {"role": "assistant", "content": "I'm doing well, thank you for asking!"},
+        {"role": "user", "content": "Tell me about the weather."},
+        {"role": "assistant", "content": "I don't have real-time weather information."},
+    ]
+
+    # Compress messages with the existing message set ID
+    compressed = recall_kit.compress_messages(
+        messages, target_token_count=100, message_set_id=message_set.id
+    )
+
+    # Check that the original message set is now inactive
+    updated_message_set = recall_kit.get_message_set(message_set.id)
+    assert updated_message_set is not None
+    assert updated_message_set.active is False
+
+    # Check that a new active message set was created
+    active_message_set = recall_kit.get_active_message_set()
+    assert active_message_set is not None
+    assert active_message_set.id != message_set.id
+    assert active_message_set.metadata.get("compressed") is True
+    assert active_message_set.metadata.get("original_message_set_id") == message_set.id

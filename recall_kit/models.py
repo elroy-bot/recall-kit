@@ -135,7 +135,7 @@ class Message(BaseModel):
     @classmethod
     def validate_role(cls, v: str) -> str:
         """Validate that the role is one of the allowed values."""
-        allowed_roles = {"system", "user", "assistant"}
+        allowed_roles = {"system", "user", "assistant", "tool"}
         if v not in allowed_roles:
             raise ValueError(f"Role must be one of {allowed_roles}")
         return v
