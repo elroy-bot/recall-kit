@@ -15,7 +15,7 @@ from pydantic import BaseModel, Field
 
 from recall_kit.models import Memory, Message, MessageSet
 
-from .constants import MESSAGES
+from .constants import MESSAGES, MODEL, USER_ID
 
 
 # Define type protocols for the callback functions
@@ -694,7 +694,7 @@ class RecallKit:
         augmented_request = self.augment_chat_request(kwargs)
 
         # Extract parameters for the completion function
-        model = augmented_request.pop("model", None)
+        model = augmented_request.get(MODEL, None)
         if not model:
             raise ValueError("No model specified for chat completion")
 
@@ -726,11 +726,11 @@ class RecallKit:
             )
         except ContextWindowExceededError:
             kwargs[MESSAGES] = self.compress_messages(messages)
-            return self.completion(kwargs)
+            return self.completion(**kwargs)
 
         # Store the conversation as a memory and as messages
         self._store_conversation_memory(
-            {"messages": messages, "model": model, "user_id": user_id}, response
+            {MESSAGES: messages, MODEL: model, USER_ID: user_id}, response
         )
         self.store_conversation(messages, response, user_id)
 
@@ -755,19 +755,16 @@ class RecallKit:
 
         query = user_messages[-1].get("content", "")
 
-        try:
-            # Handle both object-style and dict-style responses
-            if hasattr(response, "choices"):
-                assistant_message = response.choices[0].message.content
-            elif isinstance(response, dict) and "choices" in response:
-                choice = response["choices"][0]
-                if isinstance(choice, dict) and "message" in choice:
-                    assistant_message = choice["message"].get("content", "")
-                else:
-                    return
+        # Handle both object-style and dict-style responses
+        if hasattr(response, "choices"):
+            assistant_message = response.choices[0].message.content
+        elif isinstance(response, dict) and "choices" in response:
+            choice = response["choices"][0]
+            if isinstance(choice, dict) and "message" in choice:
+                assistant_message = choice["message"].get("content", "")
             else:
                 return
-        except (AttributeError, IndexError, KeyError):
+        else:
             return
 
         conversation_text = f"User: {query}\nAssistant: {assistant_message}"
@@ -948,42 +945,38 @@ class RecallKit:
             )
 
             # Create a new message for the assistant response
-            try:
-                # Handle both object-style and dict-style responses
-                if hasattr(response, "choices"):
-                    assistant_content = response.choices[0].message.content
-                elif isinstance(response, dict) and "choices" in response:
-                    choice = response["choices"][0]
-                    if isinstance(choice, dict) and "message" in choice:
-                        assistant_content = choice["message"].get("content", "")
-                    else:
-                        return active_message_set
+            # Handle both object-style and dict-style responses
+            if hasattr(response, "choices"):
+                assistant_content = response.choices[0].message.content
+            elif isinstance(response, dict) and "choices" in response:
+                choice = response["choices"][0]
+                if isinstance(choice, dict) and "message" in choice:
+                    assistant_content = choice["message"].get("content", "")
                 else:
                     return active_message_set
-
-                assistant_message = self.create_message(
-                    role="assistant",
-                    content=assistant_content,
-                    metadata={"type": "conversation"},
-                    user_id=user_id,
-                )
-
-                # Update the message set with the new messages
-                message_ids = active_message_set.message_ids + [
-                    user_message.id,
-                    assistant_message.id,
-                ]
-
-                # Create a new message set with the updated message IDs
-                return self.create_message_set(
-                    message_ids=message_ids,
-                    active=True,
-                    metadata={"type": "conversation"},
-                    user_id=user_id,
-                )
-            except (AttributeError, IndexError):
-                # If there's an error getting the assistant response, just return the active message set
+            else:
                 return active_message_set
+
+            assistant_message = self.create_message(
+                role="assistant",
+                content=assistant_content,
+                metadata={"type": "conversation"},
+                user_id=user_id,
+            )
+
+            # Update the message set with the new messages
+            message_ids = active_message_set.message_ids + [
+                user_message.id,
+                assistant_message.id,
+            ]
+
+            # Create a new message set with the updated message IDs
+            return self.create_message_set(
+                message_ids=message_ids,
+                active=True,
+                metadata={"type": "conversation"},
+                user_id=user_id,
+            )
         else:
             # Create new messages for each message in the conversation
             message_ids = []
@@ -1017,41 +1010,37 @@ class RecallKit:
                     message_ids.append(message.id)
 
             # Create a message for the assistant response
-            try:
-                # Handle both object-style and dict-style responses
-                if hasattr(response, "choices"):
-                    assistant_content = response.choices[0].message.content
-                elif isinstance(response, dict) and "choices" in response:
-                    choice = response["choices"][0]
-                    if isinstance(choice, dict) and "message" in choice:
-                        assistant_content = choice["message"].get("content", "")
-                    else:
-                        # Skip adding assistant message if we can't extract content
-                        return self.create_message_set(
-                            message_ids=message_ids,
-                            active=True,
-                            metadata={"type": "conversation"},
-                            user_id=user_id,
-                        )
+            # Handle both object-style and dict-style responses
+            if hasattr(response, "choices"):
+                assistant_content = response.choices[0].message.content
+            elif isinstance(response, dict) and "choices" in response:
+                choice = response["choices"][0]
+                if isinstance(choice, dict) and "message" in choice:
+                    assistant_content = choice["message"].get("content", "")
                 else:
-                    # Skip adding assistant message if response format is unexpected
+                    # Skip adding assistant message if we can't extract content
                     return self.create_message_set(
                         message_ids=message_ids,
                         active=True,
                         metadata={"type": "conversation"},
                         user_id=user_id,
                     )
-
-                assistant_message = self.create_message(
-                    role="assistant",
-                    content=assistant_content,
+            else:
+                # Skip adding assistant message if response format is unexpected
+                return self.create_message_set(
+                    message_ids=message_ids,
+                    active=True,
                     metadata={"type": "conversation"},
                     user_id=user_id,
                 )
-                message_ids.append(assistant_message.id)
-            except (AttributeError, IndexError, KeyError):
-                # If there's an error getting the assistant response, continue without it
-                pass
+
+            assistant_message = self.create_message(
+                role="assistant",
+                content=assistant_content,
+                metadata={"type": "conversation"},
+                user_id=user_id,
+            )
+            message_ids.append(assistant_message.id)
 
             # Create a new message set with the messages
             return self.create_message_set(
