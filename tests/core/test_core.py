@@ -7,6 +7,7 @@ import datetime
 import pytest
 
 from recall_kit import Memory, MemorySource
+from recall_kit.constants import ROLE, TOOL
 from recall_kit.core import RecallKit
 
 
@@ -286,7 +287,7 @@ def test_compress_messages(recall_kit: RecallKit):
         compressed
     ):
         tool_msg = compressed[earliest_assistant_idx + 1]
-        assert tool_msg.get("role") == "tool"
+        assert tool_msg.get(ROLE) == TOOL
         assert "[Context:" in tool_msg.get("content", "")
         assert "earlier messages were summarized" in tool_msg.get("content", "")
         assert "type" in tool_msg.get("metadata", {})

@@ -26,7 +26,17 @@ from pydantic import BaseModel, Field
 
 from recall_kit.models import Memory, Message, MessageSet
 
-from .constants import MESSAGES, MODEL, ROLE, SYSTEM, TOOL, USER_ID
+from .constants import (
+    ASSISTANT,
+    CONTENT,
+    MESSAGES,
+    MODEL,
+    ROLE,
+    SYSTEM,
+    TOOL,
+    USER,
+    USER_ID,
+)
 
 
 # Define type protocols for the callback functions
@@ -510,7 +520,7 @@ class RecallKit:
         """
 
         # Call the LLM to generate the consolidated memory
-        messages = [{ROLE: "user", "content": prompt}]
+        messages = [{ROLE: USER, CONTENT: prompt}]
 
         try:
             # Try with response_format parameter (for OpenAI-compatible APIs)
@@ -525,8 +535,8 @@ class RecallKit:
                 model=model,
                 messages=[
                     {
-                        ROLE: "user",
-                        "content": prompt
+                        ROLE: USER,
+                        CONTENT: prompt
                         + "\n\nRespond with a JSON object containing 'text' and 'title' fields.",
                     }
                 ],
@@ -536,7 +546,7 @@ class RecallKit:
         if hasattr(response, "choices") and len(response.choices) > 0:
             content = response.choices[0].message.content
         elif isinstance(response, dict) and "choices" in response:
-            content = response["choices"][0]["message"]["content"]
+            content = response["choices"][0]["message"][CONTENT]
         else:
             raise ValueError("Invalid response format from completion function")
 
@@ -557,7 +567,7 @@ class RecallKit:
         """
         # Extract the query from the last user message
         messages = request.get("messages", [])
-        user_messages = [m for m in messages if m.get(ROLE) == "user"]
+        user_messages = [m for m in messages if m.get(ROLE) == USER]
 
         if not user_messages:
             return []
@@ -633,7 +643,7 @@ class RecallKit:
         if system_messages:
             system_message = system_messages[0]
             current_token_count = token_counter(
-                model=model, text=system_message.get("content", "")
+                model=model, text=system_message.get(CONTENT, "")
             )
         else:
             system_message = None
@@ -644,7 +654,7 @@ class RecallKit:
 
         # Process messages in reverse order (newest first)
         for msg in reversed(non_system_messages):
-            msg_content = msg.get("content", "")
+            msg_content = msg.get(CONTENT, "")
             msg_role = msg.get(ROLE, "")
 
             # Calculate tokens for this message
@@ -728,7 +738,7 @@ class RecallKit:
 
                 tool_message = {
                     "role": TOOL,
-                    "content": summary_content,
+                    CONTENT: summary_content,
                     "metadata": {"type": "summary", "memory_id": memory.id},
                     "tool_call_id": tool_call_id,
                 }
@@ -759,24 +769,24 @@ class RecallKit:
                 tool_calls = msg.get("tool_calls")
 
                 # Create message with appropriate parameters based on role
-                if role == "tool" and tool_call_id:
+                if role == TOOL and tool_call_id:
                     message = self.create_message(
                         role=role,
-                        content=msg.get("content", ""),
+                        content=msg.get(CONTENT, ""),
                         metadata=msg.get("metadata", {}),
                         tool_call_id=tool_call_id,
                     )
-                elif role == "assistant" and tool_calls:
+                elif role == ASSISTANT and tool_calls:
                     message = self.create_message(
                         role=role,
-                        content=msg.get("content", ""),
+                        content=msg.get(CONTENT, ""),
                         metadata=msg.get("metadata", {}),
                         tool_calls=tool_calls,
                     )
                 else:
                     message = self.create_message(
                         role=role,
-                        content=msg.get("content", ""),
+                        content=msg.get(CONTENT, ""),
                         metadata=msg.get("metadata", {}),
                     )
                 message_objects.append(message)
@@ -826,7 +836,7 @@ class RecallKit:
         temperature = augmented_request.pop("temperature", None)
 
         # Extract user parameter if provided
-        user_token = augmented_request.pop("user", "default")
+        user_token = augmented_request.pop(USER, "default")
 
         # Get or create user ID from token
         user_id = self.storage.get_user_by_token(user_token)
@@ -836,7 +846,7 @@ class RecallKit:
         # Add any remaining kwargs to additional args
         additional_args = augmented_request
         # Add user token back to additional args for the completion function
-        additional_args["user"] = user_token
+        additional_args[USER] = user_token
 
         # Generate the completion using the completion function
         try:
@@ -870,13 +880,13 @@ class RecallKit:
             response: The chat completion response
         """
         messages = request.get("messages", [])
-        user_messages = [m for m in messages if m.get(ROLE) == "user"]
+        user_messages = [m for m in messages if m.get(ROLE) == USER]
         user_id = request.get("user_id")
 
         if not user_messages:
             return
 
-        query = user_messages[-1].get("content", "")
+        query = user_messages[-1].get(CONTENT, "")
 
         # Handle both object-style and dict-style responses
         if hasattr(response, "choices"):
@@ -884,7 +894,7 @@ class RecallKit:
         elif isinstance(response, dict) and "choices" in response:
             choice = response["choices"][0]
             if isinstance(choice, dict) and "message" in choice:
-                assistant_message = choice["message"].get("content", "")
+                assistant_message = choice["message"].get(CONTENT, "")
             else:
                 return
         else:
@@ -928,16 +938,16 @@ class RecallKit:
 
         message_args = {
             "role": role,
-            "content": content,
+            CONTENT: content,
             "metadata": metadata or {},
             "user_id": user_id,
         }
 
         # Add tool-specific fields if provided
-        if role == "tool" and tool_call_id:
+        if role == TOOL and tool_call_id:
             message_args["tool_call_id"] = tool_call_id
 
-        if role == "assistant" and tool_calls:
+        if role == ASSISTANT and tool_calls:
             message_args["tool_calls"] = tool_calls
 
         message = Message(**message_args)
@@ -1067,15 +1077,11 @@ class RecallKit:
         active_message_set = self.get_active_message_set()
 
         # If there's only one user message and an active message set, add to it
-        if (
-            len(messages) == 1
-            and messages[0].get(ROLE) == "user"
-            and active_message_set
-        ):
+        if len(messages) == 1 and messages[0].get(ROLE) == USER and active_message_set:
             # Create a new message for the user input
             user_message = self.create_message(
-                role="user",
-                content=messages[0].get("content", ""),
+                role=USER,
+                content=messages[0].get(CONTENT, ""),
                 metadata={"type": "conversation"},
                 user_id=user_id,
             )
@@ -1087,14 +1093,14 @@ class RecallKit:
             elif isinstance(response, dict) and "choices" in response:
                 choice = response["choices"][0]
                 if isinstance(choice, dict) and "message" in choice:
-                    assistant_content = choice["message"].get("content", "")
+                    assistant_content = choice["message"].get(CONTENT, "")
                 else:
                     return active_message_set
             else:
                 return active_message_set
 
             assistant_message = self.create_message(
-                role="assistant",
+                role=ASSISTANT,
                 content=assistant_content,
                 metadata={"type": "conversation"},
                 user_id=user_id,
@@ -1125,7 +1131,7 @@ class RecallKit:
             # Process each message
             for i, msg in enumerate(messages):
                 role = msg.get(ROLE, "")
-                content = msg.get("content", "")
+                content = msg.get(CONTENT, "")
                 tool_call_id = msg.get("tool_call_id")
                 tool_calls = msg.get("tool_calls")
 
@@ -1141,9 +1147,9 @@ class RecallKit:
                 if not duplicate:
                     # Handle tool messages properly
                     if (
-                        role == "tool"
+                        role == TOOL
                         and i > 0
-                        and messages[i - 1].get(ROLE) == "assistant"
+                        and messages[i - 1].get(ROLE) == ASSISTANT
                     ):
                         # If tool_call_id is not provided, generate one
                         if not tool_call_id:
@@ -1159,7 +1165,7 @@ class RecallKit:
                             user_id=user_id,
                             tool_call_id=tool_call_id,
                         )
-                    elif role == "assistant" and tool_calls:
+                    elif role == ASSISTANT and tool_calls:
                         message = self.create_message(
                             role=role,
                             content=content,
@@ -1183,7 +1189,7 @@ class RecallKit:
             elif isinstance(response, dict) and "choices" in response:
                 choice = response["choices"][0]
                 if isinstance(choice, dict) and "message" in choice:
-                    assistant_content = choice["message"].get("content", "")
+                    assistant_content = choice["message"].get(CONTENT, "")
                 else:
                     # Skip adding assistant message if we can't extract content
                     return self.create_message_set(
@@ -1202,7 +1208,7 @@ class RecallKit:
                 )
 
             assistant_message = self.create_message(
-                role="assistant",
+                role=ASSISTANT,
                 content=assistant_content,
                 metadata={"type": "conversation"},
                 user_id=user_id,

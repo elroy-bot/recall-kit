@@ -13,6 +13,8 @@ from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field, field_validator
 
+from .constants import ASSISTANT, SYSTEM, TOOL, USER
+
 
 class MemorySource(BaseModel):
     """
@@ -143,7 +145,7 @@ class Message(BaseModel):
     @classmethod
     def validate_role(cls, v: str) -> str:
         """Validate that the role is one of the allowed values."""
-        allowed_roles = {"system", "user", "assistant", "tool"}
+        allowed_roles = {SYSTEM, USER, ASSISTANT, TOOL}
         if v not in allowed_roles:
             raise ValueError(f"Role must be one of {allowed_roles}")
         return v

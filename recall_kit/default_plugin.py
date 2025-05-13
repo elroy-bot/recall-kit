@@ -15,7 +15,7 @@ from pydantic import BaseModel
 from toolz import pipe
 from toolz.curried import filter, map, take
 
-from .constants import ASSISTANT, CONTENT, ROLE, USER
+from .constants import ASSISTANT, CONTENT, ROLE, TOOL, USER
 from .core import EmbeddingFunction, StorageBackendProtocol
 from .models import Memory
 from .storage import SQLiteBackend
@@ -110,7 +110,7 @@ class DefaultPlugin:
                 (
                     i
                     for i, msg in enumerate(augmented_request["messages"])
-                    if msg.get("role") == "system"
+                    if msg.get(ROLE) == "system"
                 ),
                 None,
             )
@@ -123,7 +123,7 @@ class DefaultPlugin:
             else:
                 # Insert new system message at the beginning
                 augmented_request["messages"].insert(
-                    0, {"role": "system", "content": memory_context}
+                    0, {ROLE: "system", "content": memory_context}
                 )
 
         return augmented_request
@@ -158,8 +158,6 @@ class DefaultPlugin:
             return DefaultPlugin.embedding_fn(
                 text[int(len(text) / 2) :]
             )  # Retry with half the text
-        except Exception:
-            return [[0.0] * 1536]
 
     @staticmethod
     def completion_fn(
@@ -195,13 +193,13 @@ class DefaultPlugin:
             current_msg = messages[i]
 
             # Handle regular messages
-            if current_msg.get("role") != "tool":
+            if current_msg.get(ROLE) != TOOL:
                 processed_messages.append(current_msg)
                 i += 1
                 continue
 
             # Handle tool messages - they need a preceding assistant message with tool_calls
-            if i > 0 and messages[i - 1].get("role") == "assistant":
+            if i > 0 and messages[i - 1].get(ROLE) == ASSISTANT:
                 # Get the previous assistant message
                 prev_assistant_msg = processed_messages[-1]
 
