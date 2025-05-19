@@ -8,13 +8,12 @@ import pytest
 from litellm import ChatCompletionRequest
 
 from recall_kit.plugins import (
-    PluginRegistry,
     call_hooks,
     get_storage_backend,
-    hookimpl,
     register_retrieve_fn,
     register_storage_backend,
 )
+from recall_kit.plugins.registry import PluginRegistry, hookimpl
 from recall_kit.protocols.base import StorageBackendProtocol
 from recall_kit.storage.sqlite import SQLiteBackend
 from tests.conftest import MockStorageBackend, mock_embed_text

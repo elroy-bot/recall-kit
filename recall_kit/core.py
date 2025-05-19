@@ -19,15 +19,6 @@ from recall_kit.models import Memory, Message, MessageSet
 
 from .constants import CONTENT, ROLE, USER
 from .processors.chat_completions import get_completion
-from .protocols.base import (
-    AugmentFunction,
-    CompletionFunction,
-    EmbeddingFunction,
-    FilterFunction,
-    RerankFunction,
-    RetrieveFunction,
-    StorageBackendProtocol,
-)
 
 # Type variable for the RecallKit class
 T = TypeVar("T", bound="RecallKit")
@@ -43,6 +34,16 @@ class RecallKit:
     This class provides methods for creating, storing, retrieving, and
     consolidating memories.
     """
+
+    from .protocols.base import (
+        AugmentFunction,
+        CompletionFunction,
+        EmbeddingFunction,
+        FilterFunction,
+        RerankFunction,
+        RetrieveFunction,
+        StorageBackendProtocol,
+    )
 
     def __init__(
         self,

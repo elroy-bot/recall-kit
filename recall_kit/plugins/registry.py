@@ -20,7 +20,7 @@ from typing import (
     runtime_checkable,
 )
 
-from ..core import (
+from ..protocols.base import (
     AugmentFunction,
     CompletionFunction,
     EmbeddingFunction,

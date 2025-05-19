@@ -22,7 +22,7 @@ from typing import (
     get_type_hints,
 )
 
-from .core import (
+from .protocols.base import (
     AugmentFunction,
     CompletionFunction,
     EmbeddingFunction,
@@ -260,7 +260,6 @@ class PluginRegistry:
             TypeError: If retrieve_fn does not conform to RetrieveFunction protocol
         """
         # Check if the function conforms to the RetrieveFunction protocol
-        from .core import RetrieveFunction
 
         _check_protocol_conformance(retrieve_fn, RetrieveFunction)
 
@@ -299,7 +298,6 @@ class PluginRegistry:
             TypeError: If filter_fn does not conform to FilterFunction protocol
         """
         # Check if the function conforms to the FilterFunction protocol
-        from .core import FilterFunction
 
         _check_protocol_conformance(filter_fn, FilterFunction)
 
@@ -338,7 +336,6 @@ class PluginRegistry:
             TypeError: If rerank_fn does not conform to RerankFunction protocol
         """
         # Check if the function conforms to the RerankFunction protocol
-        from .core import RerankFunction
 
         _check_protocol_conformance(rerank_fn, RerankFunction)
 
@@ -377,7 +374,6 @@ class PluginRegistry:
             TypeError: If augment_fn does not conform to AugmentFunction protocol
         """
         # Check if the function conforms to the AugmentFunction protocol
-        from .core import AugmentFunction
 
         _check_protocol_conformance(augment_fn, AugmentFunction)
 

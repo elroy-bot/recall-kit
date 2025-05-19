@@ -7,7 +7,7 @@ from litellm import Type
 from pydantic import BaseModel
 
 from ..constants import ASSISTANT, ROLE, TOOL
-from ..core import CompletionFunction
+from ..protocols.base import CompletionFunction
 
 
 def get_completion(

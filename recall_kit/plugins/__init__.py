@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Any, Callable, List, Optional, Type
 
-from ..core import (
+from ..protocols.base import (
     AugmentFunction,
     CompletionFunction,
     EmbeddingFunction,
@@ -19,21 +19,15 @@ from ..core import (
     StorageBackendProtocol,
 )
 
-# Import from default module
-from .default import DefaultPlugin
-
 # Import from discovery module
-from .discovery import discover_plugins, register_module_hooks
+from .discovery import discover_plugins
 
 # Import from registry module
-from .registry import (
-    MemoryProcessorProtocol,
-    PluginRegistry,
-    _check_protocol_conformance,
-    check_signature_compatibility,
-    hookimpl,
-    registry,
-)
+from .registry import _check_protocol_conformance, registry
+
+# Import from default module
+
+
 
 # Re-export convenience functions that use the global registry
 
