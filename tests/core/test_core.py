@@ -6,9 +6,9 @@ import datetime
 
 import pytest
 
-from recall_kit import Memory, MemorySource
 from recall_kit.constants import ROLE, TOOL
 from recall_kit.core import RecallKit
+from recall_kit.models import Memory, MemorySource
 
 
 def test_memory_creation():
