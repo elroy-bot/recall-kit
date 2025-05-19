@@ -9,17 +9,7 @@ from __future__ import annotations
 
 import datetime
 import json
-from typing import (
-    Any,
-    Dict,
-    List,
-    Optional,
-    Protocol,
-    Sequence,
-    TypeVar,
-    Union,
-    runtime_checkable,
-)
+from typing import Any, Dict, List, Optional, TypeVar
 
 from litellm import ModelResponse, Type  # type: ignore
 from pydantic import BaseModel, Field
@@ -28,126 +18,22 @@ from recall_kit.managers import ChatManager, MemoryManager, MessageManager
 from recall_kit.models import Memory, Message, MessageSet
 
 from .constants import CONTENT, ROLE, USER
-from .plugins import PluginRegistry
 from .processors.chat_completions import get_completion
-
-
-# Define type protocols for the callback functions
-@runtime_checkable
-class RetrieveFunction(Protocol):
-    def __call__(
-        self,
-        storage: StorageBackendProtocol,
-        embedding_fn: EmbeddingFunction,
-        request: Any,
-    ) -> List[Memory]:
-        ...
-
-
-@runtime_checkable
-class FilterFunction(Protocol):
-    def __call__(self, memories: Sequence[Memory], request: Any) -> List[Memory]:
-        ...
-
-
-@runtime_checkable
-class RerankFunction(Protocol):
-    def __call__(self, memories: Sequence[Memory], request: Any) -> List[Memory]:
-        ...
-
-
-@runtime_checkable
-class AugmentFunction(Protocol):
-    def __call__(self, memories: Sequence[Memory], request: Any) -> Any:
-        ...
-
-
-@runtime_checkable
-class EmbeddingFunction(Protocol):
-    def __call__(self, text: str) -> List[float]:
-        ...
-
-
-@runtime_checkable
-class CompletionFunction(Protocol):
-    def __call__(
-        self,
-        model: str,
-        messages: List[Dict[str, Any]],
-        max_tokens: Optional[int] = None,
-        temperature: Optional[float] = None,
-        response_format: Optional[Union[Dict[str, Any], Type[BaseModel]]] = None,
-        additional_args: Optional[Dict[str, Any]] = None,
-    ) -> ModelResponse:
-        ...
-
-
-@runtime_checkable
-class StorageBackendProtocol(Protocol):
-    def store_memory(self, memory: Any) -> None:
-        ...
-
-    def get_memory(self, memory_id: str) -> Any:
-        ...
-
-    def get_all_memories(self) -> List[Any]:
-        ...
-
-    def search_memories(
-        self, query_embedding: List[float], limit: int = 5
-    ) -> List[Any]:
-        ...
-
-    def update_memory(self, memory: Any) -> None:
-        ...
-
-    def delete_memory(self, memory_id: str) -> bool:
-        ...
-
-    def store_message(self, message: Any) -> None:
-        ...
-
-    def get_message(self, message_id: str) -> Any:
-        ...
-
-    def get_all_messages(self) -> List[Any]:
-        ...
-
-    def store_message_set(self, message_set: Any) -> None:
-        ...
-
-    def get_message_set(self, message_set_id: str) -> Optional[Any]:
-        ...
-
-    def get_active_message_set(self) -> Optional[Any]:
-        ...
-
-    def get_messages_in_set(self, message_set_id: str) -> List[Any]:
-        ...
-
-    def deactivate_all_message_sets(self) -> None:
-        ...
-
-    def get_all_message_sets(self) -> List[Any]:
-        ...
-
-    def create_user(self, token: str) -> int:
-        ...
-
-    def get_user_by_token(self, token: str) -> Optional[int]:
-        ...
-
-    def get_default_user_id(self) -> int:
-        ...
-
+from .protocols.base import (
+    AugmentFunction,
+    CompletionFunction,
+    EmbeddingFunction,
+    FilterFunction,
+    RerankFunction,
+    RetrieveFunction,
+    StorageBackendProtocol,
+)
 
 # Type variable for the RecallKit class
 T = TypeVar("T", bound="RecallKit")
 
 
 # Default functions have been moved to DefaultPlugin
-
-registry = PluginRegistry()
 
 
 class RecallKit:
@@ -226,6 +112,8 @@ class RecallKit:
         Returns:
             A new RecallKit instance
         """
+        from recall_kit.plugins import registry
+
         return cls(
             storage=storage or registry.get_storage_backend("default"),
             embedding_fn=embedding_fn or registry.get_embedding_fn("default"),

@@ -10,8 +10,10 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional, Protocol, Union, runtime_checkable
 
-from litellm import ModelResponse, Type  # type: ignore
+from litellm import ChatCompletionRequest, ModelResponse, Type  # type: ignore
 from pydantic import BaseModel
+
+from ..models.memory import Memory
 
 
 # Define type protocols for the callback functions
@@ -21,26 +23,32 @@ class RetrieveFunction(Protocol):
         self,
         storage: StorageBackendProtocol,
         embedding_fn: EmbeddingFunction,
-        request: Any,
-    ) -> List[Any]:
+        request: ChatCompletionRequest,
+    ) -> List[Memory]:
         ...
 
 
 @runtime_checkable
 class FilterFunction(Protocol):
-    def __call__(self, memories: List[Any], request: Any) -> bool:
+    def __call__(
+        self, memories: List[Memory], request: ChatCompletionRequest
+    ) -> List[Memory]:
         ...
 
 
 @runtime_checkable
 class RerankFunction(Protocol):
-    def __call__(self, memories: List[Any], request: Any) -> List[Any]:
+    def __call__(
+        self, memories: List[Memory], request: ChatCompletionRequest
+    ) -> List[Memory]:
         ...
 
 
 @runtime_checkable
 class AugmentFunction(Protocol):
-    def __call__(self, memories: List[Any], request: Any) -> Any:
+    def __call__(
+        self, memories: List[Memory], request: ChatCompletionRequest
+    ) -> ChatCompletionRequest:
         ...
 
 

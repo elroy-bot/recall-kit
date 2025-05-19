@@ -20,7 +20,6 @@ from typing import (
     Type,
     TypeVar,
     get_type_hints,
-    runtime_checkable,
 )
 
 from .core import (
@@ -84,12 +83,6 @@ def check_signature_compatibility(
 
 T = TypeVar("T")
 # Define protocol classes for functions
-
-
-@runtime_checkable
-class MemoryProcessorProtocol(Protocol):
-    def process(self, memory: Any) -> Any:
-        ...
 
 
 def _check_protocol_conformance(
@@ -276,7 +269,7 @@ class PluginRegistry:
             for alias in aliases:
                 self._retrieve_fns[alias] = retrieve_fn
 
-    def get_retrieve_fn(self, name: str) -> Optional[Callable[[str, Any], List[Any]]]:
+    def get_retrieve_fn(self, name: str) -> RetrieveFunction:
         """
         Get a retrieve function by name.
 
@@ -286,7 +279,7 @@ class PluginRegistry:
         Returns:
             The retrieve function, or None if not found
         """
-        return self._retrieve_fns.get(name)
+        return self._retrieve_fns[name]
 
     def register_filter_fn(
         self,
@@ -315,7 +308,7 @@ class PluginRegistry:
             for alias in aliases:
                 self._filter_fns[alias] = filter_fn
 
-    def get_filter_fn(self, name: str) -> Optional[Callable[[Any, Any], bool]]:
+    def get_filter_fn(self, name: str) -> FilterFunction:
         """
         Get a filter function by name.
 
@@ -325,11 +318,11 @@ class PluginRegistry:
         Returns:
             The filter function, or None if not found
         """
-        return self._filter_fns.get(name)
+        return self._filter_fns[name]
 
     def register_rerank_fn(
         self,
-        rerank_fn: Callable[[List[Any], Any], List[Any]],
+        rerank_fn: RerankFunction,
         name: str,
         aliases: Optional[List[str]] = None,
     ) -> None:
@@ -354,9 +347,7 @@ class PluginRegistry:
             for alias in aliases:
                 self._rerank_fns[alias] = rerank_fn
 
-    def get_rerank_fn(
-        self, name: str
-    ) -> Optional[Callable[[List[Any], Any], List[Any]]]:
+    def get_rerank_fn(self, name: str) -> RerankFunction:
         """
         Get a rerank function by name.
 
@@ -366,7 +357,7 @@ class PluginRegistry:
         Returns:
             The rerank function, or None if not found
         """
-        return self._rerank_fns.get(name)
+        return self._rerank_fns[name]
 
     def register_augment_fn(
         self,

@@ -258,7 +258,9 @@ class MemoryManager:
         """Calculate cosine similarity between two embeddings."""
         return calculate_similarity(embedding1, embedding2)
 
-    def _generate_consolidated_memory(self, model: str, memories: List[Memory]) -> Any:
+    def _generate_consolidated_memory(
+        self, model: str, memories: List[Memory]
+    ) -> Memory:
         """
         Generate text and title for a consolidated memory using LLM.
 

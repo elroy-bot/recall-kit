@@ -84,7 +84,7 @@ exclude = [
     "**/*.ipynb",
     "**/**.ipynb",
     ".vscode",
-    "**/typing.py",
+    "**/**typing.py",
 ]
 
 [tool.pytest.ini_options]

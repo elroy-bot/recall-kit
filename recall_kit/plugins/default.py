@@ -7,9 +7,9 @@ including retrieval, filtering, reranking, augmentation, embedding, and completi
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional, Sequence, Type, Union
+from typing import Any, Dict, List, Optional, Type, Union
 
-from litellm import ModelResponse  # type: ignore
+from litellm import ChatCompletionRequest, ModelResponse  # type: ignore
 from pydantic import BaseModel
 from toolz import pipe
 from toolz.curried import filter, map, take
@@ -25,7 +25,9 @@ class DefaultPlugin:
 
     @staticmethod
     def retrieve(
-        storage: StorageBackendProtocol, embedding_fn: EmbeddingFunction, request: Any
+        storage: StorageBackendProtocol,
+        embedding_fn: EmbeddingFunction,
+        request: ChatCompletionRequest,
     ) -> List[Memory]:
         """
         Default retrieve function.
@@ -52,7 +54,7 @@ class DefaultPlugin:
         )
 
     @staticmethod
-    def filter(memories: Sequence[Memory], request: Any) -> List[Memory]:
+    def filter(memories: List[Memory], request: ChatCompletionRequest) -> List[Memory]:
         """
         Default filter function.
 
@@ -74,7 +76,7 @@ class DefaultPlugin:
         return answers
 
     @staticmethod
-    def rerank(memories: Sequence[Memory], request: Any) -> List[Memory]:
+    def rerank(memories: List[Memory], request: ChatCompletionRequest) -> List[Memory]:
         """
         Default rerank function.
 
@@ -92,7 +94,9 @@ class DefaultPlugin:
         return sorted(memories, key=lambda m: getattr(m, "relevance"), reverse=True)
 
     @staticmethod
-    def augment(memories: Sequence[Memory], request: Any) -> Any:
+    def augment(
+        memories: List[Memory], request: ChatCompletionRequest
+    ) -> ChatCompletionRequest:
         """
         Default augment function.
 

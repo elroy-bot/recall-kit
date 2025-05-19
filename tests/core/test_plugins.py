@@ -5,6 +5,7 @@ Tests for the plugin system of Recall Kit.
 from typing import Any
 
 import pytest
+from litellm import ChatCompletionRequest
 
 from recall_kit.plugins import (
     PluginRegistry,
@@ -189,7 +190,9 @@ def test_non_compliant_retrieve_function():
     assert "does not conform to RetrieveFunction protocol" in error_msg
 
     # Create another function with wrong return type
-    def bad_return_type(storage: Any, embedding_fn: Any, request: Any) -> str:
+    def bad_return_type(
+        storage: Any, embedding_fn: Any, request: ChatCompletionRequest
+    ) -> str:
         """This function has the right parameters but wrong return type."""
         return "This returns a string instead of List[Memory]"
 

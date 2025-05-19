@@ -7,9 +7,7 @@ including processing requests and responses.
 
 from __future__ import annotations
 
-from typing import Any, Dict
-
-from litellm import ModelResponse  # type: ignore
+from litellm import ChatCompletionRequest, ModelResponse  # type: ignore
 
 from ..constants import ROLE
 
@@ -45,8 +43,8 @@ def extract_content_from_response(response: ModelResponse) -> str:
 
 
 def augment_with_memories(
-    request: Dict[str, Any], memories_text: str
-) -> Dict[str, Any]:
+    request: ChatCompletionRequest, memories_text: str
+) -> ChatCompletionRequest:
     """
     Augment a request with memories.
 
@@ -60,6 +58,8 @@ def augment_with_memories(
     if not memories_text:
         return request
 
+    messages = request["messages"]
+
     # Create a copy of the request to avoid modifying the original
     augmented_request = dict(request)
 
@@ -68,23 +68,19 @@ def augment_with_memories(
     if "messages" in augmented_request:
         # Find system message if it exists
         system_msg_idx = next(
-            (
-                i
-                for i, msg in enumerate(augmented_request["messages"])
-                if msg.get(ROLE) == "system"
-            ),
+            (i for i, msg in enumerate(messages) if msg.get(ROLE) == "system"),
             None,
         )
 
         if system_msg_idx is not None:
             # Append to existing system message
-            augmented_request["messages"][system_msg_idx][
+            messages[system_msg_idx][
                 "content"
-            ] += f"\n\n{memory_context}"
+            ] += f"\n\n{memory_context}"  # type: ignore
         else:
             # Insert new system message at the beginning
-            augmented_request["messages"].insert(
-                0, {ROLE: "system", "content": memory_context}
-            )
+            messages.insert(0, {ROLE: "system", "content": memory_context})
 
-    return augmented_request
+    request["messages"] = messages
+
+    return request
