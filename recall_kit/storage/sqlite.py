@@ -14,7 +14,7 @@ import sqlite3
 from typing import List, Optional
 
 import numpy as np
-from sqlmodel import Session, SQLModel, create_engine, select
+from sqlmodel import Session, SQLModel, create_engine, desc, select
 
 from recall_kit.models import Memory, Message, MessageSet
 from recall_kit.protocols import StorageBackendProtocol
@@ -657,7 +657,7 @@ class SQLiteBackend:
             statement = (
                 select(MessageSetTable)
                 .where(MessageSetTable.active == True)
-                .order_by(MessageSetTable.created_at.desc())
+                .order_by(desc(MessageSetTable.created_at))
                 .limit(1)
             )
             results = session.exec(statement).all()
@@ -732,6 +732,10 @@ class SQLiteBackend:
             created_at=message_table.created_at,
             metadata=metadata,
             user_id=message_table.user_id,
+            tool_calls=json.loads(message_table.tool_calls)
+            if message_table.tool_calls
+            else None,
+            tool_call_id=message_table.tool_call_id,
         )
 
         return message
@@ -789,7 +793,7 @@ class SQLiteBackend:
 
             # Create new user
             # Get the highest existing ID
-            statement = select(UserTable).order_by(UserTable.id.desc()).limit(1)
+            statement = select(UserTable).order_by(desc(UserTable.id)).limit(1)
             highest_user = session.exec(statement).first()
             next_id = 1 if not highest_user else highest_user.id + 1
 
@@ -830,6 +834,8 @@ class SQLiteBackend:
             # Create default user if it doesn't exist
             self._create_default_user()
             user_id = self.get_user_by_token("default")
+
+        assert user_id
 
         return user_id
 

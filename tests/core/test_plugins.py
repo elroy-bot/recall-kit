@@ -131,7 +131,7 @@ def test_hookimpl_decorator():
 
     # Check that the function has the _is_hookimpl attribute
     assert hasattr(test_hook, "_is_hookimpl")
-    assert test_hook._is_hookimpl
+    assert getattr(test_hook, "_is_hookimpl")
 
     # Check that the function still works
     assert test_hook("test") == "Decorated: test"
@@ -182,7 +182,7 @@ def test_non_compliant_retrieve_function():
 
     # Attempt to register the non-compliant function
     with pytest.raises(TypeError) as excinfo:
-        register_retrieve_fn(bad_retrieve_fn, "bad_retrieve_fn")
+        register_retrieve_fn(bad_retrieve_fn, "bad_retrieve_fn")  # type: ignore
 
     # Check that the error message mentions the specific issues
     error_msg = str(excinfo.value)
@@ -195,7 +195,7 @@ def test_non_compliant_retrieve_function():
 
     # Attempt to register the function with wrong return type
     with pytest.raises(TypeError) as excinfo:
-        register_retrieve_fn(bad_return_type, "bad_return_type")
+        register_retrieve_fn(bad_return_type, "bad_return_type")  # type: ignore
 
     # Check that the error message mentions return type
     error_msg = str(excinfo.value)

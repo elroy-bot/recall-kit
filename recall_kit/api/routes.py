@@ -103,7 +103,7 @@ class ChatCompletionResponse(BaseModel):
 
 def get_recall_kit() -> RecallKit:
     """Get the RecallKit instance."""
-    return RecallKit()
+    raise NotImplementedError("Should be implemented in the main app")
 
 
 async def create_chat_completion(
@@ -150,23 +150,24 @@ async def create_chat_completion(
         # Convert the litellm response to our response format
         return ChatCompletionResponse(
             id=response.id,
+            object="chat.completion",
             created=int(response.created),
-            model=response.model,
+            model=response.model,  # type: ignore
             choices=[
                 ChatCompletionChoice(
                     index=i,
                     message=Message(
-                        role=choice.message.role,
-                        content=choice.message.content,
+                        role=choice.message.role,  # type: ignore
+                        content=choice.message.content,  # type: ignore
                     ),
-                    finish_reason=choice.finish_reason,
+                    finish_reason=choice.finish_reason,  # type: ignore
                 )
                 for i, choice in enumerate(response.choices)
             ],
             usage=ChatCompletionUsage(
-                prompt_tokens=response.usage.prompt_tokens,
-                completion_tokens=response.usage.completion_tokens,
-                total_tokens=response.usage.total_tokens,
+                prompt_tokens=response.usage.prompt_tokens,  # type: ignore
+                completion_tokens=response.usage.completion_tokens,  # type: ignore
+                total_tokens=response.usage.total_tokens,  # type: ignore
             ),
         )
 

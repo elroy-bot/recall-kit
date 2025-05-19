@@ -56,7 +56,7 @@ def cli(
     if debug:
         import litellm
 
-        litellm._turn_on_debug()
+        litellm._turn_on_debug()  # type: ignore
         click.echo("Debug mode enabled")
 
         logging.basicConfig(
@@ -321,7 +321,7 @@ def consolidate(
 @click.pass_context
 def chat(ctx: click.Context, model: str):
     """Interactive chat with memory and LLM."""
-    from litellm import ModelResponse
+    from litellm import ModelResponse  # type: ignore
 
     recall: RecallKit = ctx.obj["recall"]
 
@@ -488,7 +488,7 @@ def chat(ctx: click.Context, model: str):
             )
 
             # Extract assistant's response
-            assistant_content: str = response.choices[0].message.content
+            assistant_content: str = response.choices[0].message.content  # type: ignore
 
             # Create a new assistant message
             assistant_message = recall.create_message(

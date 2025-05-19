@@ -3,8 +3,10 @@ Tests for the core functionality of Recall Kit.
 """
 
 import datetime
+import json
 
 import pytest
+from toolz import pipe
 
 from recall_kit.constants import ROLE, TOOL
 from recall_kit.core import RecallKit
@@ -17,6 +19,8 @@ def test_memory_creation():
         text="This is a test memory",
         title="Test Memory",
         user_id=1,
+        embedding=[0.1, 0.2, 0.3],
+        source_address="test:123",
     )
 
     assert memory.text == "This is a test memory"
@@ -37,6 +41,7 @@ def test_memory_validation():
         title="Test",
         embedding=[0.1, 0.2, 0.3],
         user_id=1,
+        source_address="test:123",
     )
     assert memory.embedding == [0.1, 0.2, 0.3]
 
@@ -45,8 +50,9 @@ def test_memory_validation():
         Memory(
             text="Test",
             title="Test",
-            embedding="not a list",
+            embedding="not a list",  # type: ignore
             user_id=1,
+            source_address="test:123",
         )
 
     # Invalid embedding (not all numbers)
@@ -54,7 +60,8 @@ def test_memory_validation():
         Memory(
             text="Test",
             title="Test",
-            embedding=[0.1, "not a number", 0.3],
+            embedding=[0.1, "not a number", 0.3],  # type: ignore
+            source_address="test:123",
             user_id=1,
         )
 
@@ -131,6 +138,7 @@ def test_create_memory(recall_kit: RecallKit):
 
     # Verify the memory was stored
     retrieved = recall_kit.storage.get_memory(memory.id)
+    assert retrieved is not None
     assert retrieved.text == "This is a test memory"
 
 
@@ -142,6 +150,7 @@ def test_add_memory(recall_kit: RecallKit):
         source_address="test:123",
         metadata={"key": "value"},
         user_id=1,
+        embedding=None,
     )
 
     added = recall_kit.add_memory(memory)
@@ -152,6 +161,7 @@ def test_add_memory(recall_kit: RecallKit):
 
     # Verify the memory was stored
     retrieved = recall_kit.storage.get_memory(memory.id)
+    assert retrieved
     assert retrieved.text == "This is a test memory"
 
 
@@ -291,7 +301,14 @@ def test_compress_messages(recall_kit: RecallKit):
         assert "[Context:" in tool_msg.get("content", "")
         assert "earlier messages were summarized" in tool_msg.get("content", "")
         assert "type" in tool_msg.get("metadata", {})
-        assert tool_msg.get("metadata", {}).get("type") == "summary"
+        assert (
+            pipe(
+                tool_msg.get("metadata", {}),
+                json.loads,
+                lambda x: x.get("type"),
+            )
+            == "summary"
+        )
 
     # Check that a new message set was created
     message_sets = recall_kit.storage.get_all_message_sets()

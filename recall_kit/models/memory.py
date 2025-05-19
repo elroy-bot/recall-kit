@@ -47,6 +47,7 @@ class MemorySource(BaseModel):
             source_address=self.address,
             metadata=self.metadata,
             user_id=self.user_id,
+            embedding=None,
         )
 
 

@@ -70,6 +70,23 @@ include = [
     "LICENSE",
 ]
 
+[tool.pyright]
+include = [
+    "recall_kit/**/*.py",
+    "tests/**/*.py"
+]
+exclude = [
+    "**/__pycache__",
+    ".venv",
+    ".git",
+    "dist",
+    "build",
+    "**/*.ipynb",
+    "**/**.ipynb",
+    ".vscode",
+    "**/typing.py",
+]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py"]

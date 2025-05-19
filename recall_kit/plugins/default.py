@@ -7,9 +7,9 @@ including retrieval, filtering, reranking, augmentation, embedding, and completi
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional, Type, Union
+from typing import Any, Dict, List, Optional, Sequence, Type, Union
 
-from litellm import ModelResponse
+from litellm import ModelResponse  # type: ignore
 from pydantic import BaseModel
 from toolz import pipe
 from toolz.curried import filter, map, take
@@ -52,7 +52,7 @@ class DefaultPlugin:
         )
 
     @staticmethod
-    def filter(memories: List[Memory], request: Any) -> bool:
+    def filter(memories: Sequence[Memory], request: Any) -> List[Memory]:
         """
         Default filter function.
 
@@ -64,10 +64,17 @@ class DefaultPlugin:
             True if the memory should be included, False otherwise
         """
         # Keep memories with relevance > 0.7
-        return [m for m in memories if getattr(m, "relevance", 0) > 0.7]
+        answers = []
+
+        for memory in memories:
+            if not hasattr(memory, "relevance"):
+                raise ValueError("Memory object does not have a 'relevance' attribute.")
+            elif getattr(memory, "relevance") > 0.7:
+                answers.append(memory)
+        return answers
 
     @staticmethod
-    def rerank(memories: List[Memory], request: Any) -> List[Memory]:
+    def rerank(memories: Sequence[Memory], request: Any) -> List[Memory]:
         """
         Default rerank function.
 
@@ -79,10 +86,13 @@ class DefaultPlugin:
             Reranked list of memories
         """
         # Sort by relevance
-        return sorted(memories, key=lambda m: getattr(m, "relevance", 0), reverse=True)
+
+        if not hasattr(memories, "relevance"):
+            raise ValueError("Memory object does not have a 'relevance' attribute.")
+        return sorted(memories, key=lambda m: getattr(m, "relevance"), reverse=True)
 
     @staticmethod
-    def augment(memories: List[Memory], request: Any) -> Any:
+    def augment(memories: Sequence[Memory], request: Any) -> Any:
         """
         Default augment function.
 
@@ -142,9 +152,10 @@ class DefaultPlugin:
         Returns:
             Completion response
         """
-        from recall_kit.utils.completion import get_completion
 
-        return get_completion(
+        from litellm import completion as litellm_completion
+
+        resp = litellm_completion(
             model=model,
             messages=messages,
             max_tokens=max_tokens,
@@ -152,6 +163,9 @@ class DefaultPlugin:
             response_format=response_format,
             additional_args=additional_args,
         )
+
+        assert isinstance(resp, ModelResponse), "Response is not of type ModelResponse"
+        return resp
 
 
 # Import registration functions from registry module

@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 class UserTable(SQLModel, table=True):
     """SQLModel for the users table."""
 
-    __tablename__ = "users"
+    __tablename__ = "users"  # type: ignore
 
     id: int = Field(primary_key=True, default=None)
     token: str = Field(unique=True)
@@ -34,7 +34,7 @@ class UserTable(SQLModel, table=True):
 class MemoryTable(SQLModel, table=True):
     """SQLModel for the memories table."""
 
-    __tablename__ = "memories"
+    __tablename__ = "memories"  # type: ignore
 
     id: str = Field(primary_key=True)
     text: str
@@ -50,7 +50,7 @@ class MemoryTable(SQLModel, table=True):
 class EmbeddingTable(SQLModel, table=True):
     """SQLModel for the embeddings table."""
 
-    __tablename__ = "embeddings"
+    __tablename__ = "embeddings"  # type: ignore
 
     id: str = Field(primary_key=True, default_factory=lambda: str(uuid.uuid4()))
     source_table: str  # The table name that this embedding is for
@@ -64,7 +64,7 @@ class EmbeddingTable(SQLModel, table=True):
 class MessageTable(SQLModel, table=True):
     """SQLModel for the messages table."""
 
-    __tablename__ = "messages"
+    __tablename__ = "messages"  # type: ignore
 
     id: str = Field(primary_key=True)
     role: str
@@ -72,12 +72,18 @@ class MessageTable(SQLModel, table=True):
     created_at: datetime.datetime = Field(default_factory=datetime.datetime.now)
     meta_data: Optional[str] = None  # JSON string of metadata
     user_id: int
+    tool_call_id: Optional[
+        str
+    ] = None  # ID of the tool call associated with this message
+    tool_calls: Optional[
+        str
+    ] = None  # JSON string of tool calls associated with this message
 
 
 class MessageSetTable(SQLModel, table=True):
     """SQLModel for the message_sets table."""
 
-    __tablename__ = "message_sets"
+    __tablename__ = "message_sets"  # type: ignore
 
     id: str = Field(primary_key=True)
     message_ids: str  # JSON string of message IDs

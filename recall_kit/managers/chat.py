@@ -8,7 +8,8 @@ from __future__ import annotations
 
 from typing import Any, Dict
 
-from litellm import ContextWindowExceededError
+from litellm import ContextWindowExceededError  # type: ignore
+from litellm import ModelResponse  # type: ignore
 
 
 class ChatManager:
@@ -47,7 +48,7 @@ class ChatManager:
 
         return augmented_request
 
-    def completion(self, **kwargs: Any) -> Dict[str, Any]:
+    def completion(self, **kwargs: Any) -> ModelResponse:
         """
         Generate an OpenAI compatible chat completion with memory augmentation.
 

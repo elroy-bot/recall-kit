@@ -15,18 +15,21 @@ from typing import (
     List,
     Optional,
     Protocol,
+    Sequence,
     TypeVar,
     Union,
     runtime_checkable,
 )
 
-from litellm import ModelResponse, Type
+from litellm import ModelResponse, Type  # type: ignore
 from pydantic import BaseModel, Field
 
 from recall_kit.managers import ChatManager, MemoryManager, MessageManager
 from recall_kit.models import Memory, Message, MessageSet
 
 from .constants import CONTENT, ROLE, USER
+from .plugins import PluginRegistry
+from .processors.chat_completions import get_completion
 
 
 # Define type protocols for the callback functions
@@ -43,19 +46,19 @@ class RetrieveFunction(Protocol):
 
 @runtime_checkable
 class FilterFunction(Protocol):
-    def __call__(self, memories: List[Memory], request: Any) -> bool:
+    def __call__(self, memories: Sequence[Memory], request: Any) -> List[Memory]:
         ...
 
 
 @runtime_checkable
 class RerankFunction(Protocol):
-    def __call__(self, memories: List[Memory], request: Any) -> List[Memory]:
+    def __call__(self, memories: Sequence[Memory], request: Any) -> List[Memory]:
         ...
 
 
 @runtime_checkable
 class AugmentFunction(Protocol):
-    def __call__(self, memories: List[Memory], request: Any) -> Any:
+    def __call__(self, memories: Sequence[Memory], request: Any) -> Any:
         ...
 
 
@@ -84,7 +87,7 @@ class StorageBackendProtocol(Protocol):
     def store_memory(self, memory: Any) -> None:
         ...
 
-    def get_memory(self, memory_id: str) -> Optional[Any]:
+    def get_memory(self, memory_id: str) -> Any:
         ...
 
     def get_all_memories(self) -> List[Any]:
@@ -104,7 +107,7 @@ class StorageBackendProtocol(Protocol):
     def store_message(self, message: Any) -> None:
         ...
 
-    def get_message(self, message_id: str) -> Optional[Any]:
+    def get_message(self, message_id: str) -> Any:
         ...
 
     def get_all_messages(self) -> List[Any]:
@@ -143,6 +146,8 @@ T = TypeVar("T", bound="RecallKit")
 
 
 # Default functions have been moved to DefaultPlugin
+
+registry = PluginRegistry()
 
 
 class RecallKit:
@@ -221,24 +226,14 @@ class RecallKit:
         Returns:
             A new RecallKit instance
         """
-        from recall_kit.plugins import (
-            get_augment_fn,
-            get_completion_fn,
-            get_embedding_fn,
-            get_filter_fn,
-            get_rerank_fn,
-            get_retrieve_fn,
-            get_storage_backend,
-        )
-
         return cls(
-            storage=storage or get_storage_backend("default"),
-            embedding_fn=embedding_fn or get_embedding_fn("default"),
-            completion_fn=completion_fn or get_completion_fn("default"),
-            retrieve_fn=retrieve_fn or get_retrieve_fn("default"),
-            filter_fn=filter_fn or get_filter_fn("default"),
-            rerank_fn=rerank_fn or get_rerank_fn("default"),
-            augment_fn=augment_fn or get_augment_fn("default"),
+            storage=storage or registry.get_storage_backend("default"),
+            embedding_fn=embedding_fn or registry.get_embedding_fn("default"),
+            completion_fn=completion_fn or registry.get_completion_fn("default"),
+            retrieve_fn=retrieve_fn or registry.get_retrieve_fn("default"),
+            filter_fn=filter_fn or registry.get_filter_fn("default"),
+            rerank_fn=rerank_fn or registry.get_rerank_fn("default"),
+            augment_fn=augment_fn or registry.get_augment_fn("default"),
         )
 
     # Memory-related methods delegated to MemoryManager
@@ -361,7 +356,7 @@ class RecallKit:
         """
         return self.chat_manager.augment_chat_request(request)
 
-    def completion(self, **kwargs: Any) -> Dict[str, Any]:
+    def completion(self, **kwargs: Any) -> ModelResponse:
         """
         Generate an OpenAI compatible chat completion with memory augmentation.
 
@@ -575,14 +570,17 @@ class RecallKit:
 
         try:
             # Try with response_format parameter (for OpenAI-compatible APIs)
-            response = self.completion_fn(
+            response = get_completion(
+                self.completion_fn,
                 model=model,
                 messages=messages,
                 response_format=self.MemoryResponse,
             )
+
         except Exception:
             # If response_format fails, try without it
-            response = self.completion_fn(
+            response = get_completion(
+                self.completion_fn,
                 model=model,
                 messages=[
                     {
@@ -595,12 +593,13 @@ class RecallKit:
 
         # Extract the response content
         if hasattr(response, "choices") and len(response.choices) > 0:
-            content = response.choices[0].message.content
+            content = response.choices[0].message.content  # type: ignore
         elif isinstance(response, dict) and "choices" in response:
             content = response["choices"][0]["message"][CONTENT]
         else:
             raise ValueError("Invalid response format from completion function")
 
         # Parse the JSON response
+        assert isinstance(content, str), "Response content should be a string"
         memory_data = json.loads(content)
         return self.MemoryResponse(**memory_data)

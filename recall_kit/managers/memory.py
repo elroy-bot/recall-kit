@@ -60,16 +60,16 @@ class MemoryManager:
         if user_id is None:
             user_id = self.storage.get_default_user_id()
 
+        assert isinstance(user_id, int), "user_id must be an integer"
+
         memory = Memory(
             text=text,
             title=title,
+            embedding=self.embedding_fn(text),
             source_address=source_address,
             metadata=metadata or {},
             user_id=user_id,
         )
-
-        # Generate embedding
-        memory.embedding = self.embedding_fn(text)
 
         # Store the memory
         self.storage.store_memory(memory)
@@ -180,11 +180,10 @@ class MemoryManager:
                 title=memory_response.title,
                 parent_ids=parent_ids,
                 metadata={"consolidated": True, "parent_count": len(parent_ids)},
+                embedding=self.embedding_fn(memory_response.text),
                 user_id=user_id,
+                source_address="TODO_CONSOLIDATED_MEMROY_SOURCE_ADDRESS",
             )
-
-            # Generate embedding
-            consolidated_memory.embedding = self.embedding_fn(memory_response.text)
 
             # Store the consolidated memory
             self.storage.store_memory(consolidated_memory)
@@ -235,6 +234,9 @@ class MemoryManager:
             for j, memory_j in enumerate(memories):
                 if i == j or memory_j.id in used_memories:
                     continue
+
+                assert memory_i.embedding is not None
+                assert memory_j.embedding is not None
 
                 # Calculate similarity
                 similarity = self._calculate_similarity(

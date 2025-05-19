@@ -7,6 +7,7 @@ This module contains the MessageManager class for creating, retrieving, and mana
 from __future__ import annotations
 
 import datetime
+import json
 from typing import Any, Dict, List, Optional
 
 from recall_kit.constants import ASSISTANT, CONTENT, ROLE, TOOL, USER
@@ -125,6 +126,8 @@ class MessageManager:
         # Get default user_id if not provided
         if user_id is None:
             user_id = self.storage.get_default_user_id()
+
+        assert isinstance(user_id, int), "user_id must be an integer"
 
         message_set = MessageSet(
             message_ids=message_ids,
@@ -292,7 +295,7 @@ class MessageManager:
                             content=content,
                             metadata={"type": "conversation"},
                             user_id=user_id,
-                            tool_calls=tool_calls,
+                            tool_calls=json.loads(tool_calls),
                         )
                     else:
                         message = self.create_message(
@@ -370,7 +373,7 @@ class MessageManager:
         import datetime
         from collections import deque
 
-        from litellm import token_counter
+        from litellm import token_counter  # type: ignore
 
         from recall_kit.constants import ASSISTANT, SYSTEM
 
@@ -425,7 +428,10 @@ class MessageManager:
                 if isinstance(msg_created_at, str):
                     msg_created_at = datetime.datetime.fromisoformat(msg_created_at)
 
-                if msg_created_at < datetime.datetime.now() - max_message_age:
+                if (
+                    msg_created_at
+                    and msg_created_at < datetime.datetime.now() - max_message_age
+                ):
                     dropped_messages.append(msg)
                     continue
 

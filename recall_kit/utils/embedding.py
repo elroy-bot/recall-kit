@@ -12,7 +12,7 @@ import logging
 from typing import List
 
 import numpy as np
-from litellm import ContextWindowExceededError
+from litellm import ContextWindowExceededError  # type: ignore
 from litellm import embedding as litellm_embedding
 
 
@@ -129,7 +129,7 @@ def get_embedding(text: str, model: str = "text-embedding-3-small") -> List[floa
         return litellm_embedding(
             model=model,
             input=text,
-        ).data[
+        ).data[  # type: ignore
             0
         ]["embedding"]
     except ContextWindowExceededError:

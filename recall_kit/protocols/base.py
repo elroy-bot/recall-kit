@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional, Protocol, Union, runtime_checkable
 
-from litellm import ModelResponse, Type
+from litellm import ModelResponse, Type  # type: ignore
 from pydantic import BaseModel
 
 

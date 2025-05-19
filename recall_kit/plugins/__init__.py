@@ -81,7 +81,7 @@ def get_embedding_fn(name: str) -> Optional[EmbeddingFunction]:
     return registry.get_embedding_fn(name)
 
 
-def get_storage_backend(name: str) -> Optional[Type[StorageBackendProtocol]]:
+def get_storage_backend(name: str) -> StorageBackendProtocol:
     """
     Get a storage backend by name.
 
@@ -145,39 +145,7 @@ def register_retrieve_fn(
     registry.register_retrieve_fn(retrieve_fn, name, aliases)
 
 
-def get_retrieve_fn(name: str) -> Optional[Callable[[str, Any], List[Any]]]:
-    """
-    Get a retrieve function by name.
-
-    Args:
-        name: The name of the retrieve function
-
-    Returns:
-        The retrieve function, or None if not found
-    """
-    return registry.get_retrieve_fn(name)
-
-
-def register_filter_fn(
-    filter_fn: FilterFunction, name: str, aliases: Optional[List[str]] = None
-) -> None:
-    """
-    Register a filter function.
-
-    Args:
-        filter_fn: The filter function to register
-        name: The name of the filter function
-        aliases: Optional list of aliases for the function
-
-    Raises:
-        TypeError: If filter_fn does not conform to FilterFunction protocol
-    """
-    # Check protocol conformance before registering
-    _check_protocol_conformance(filter_fn, FilterFunction)
-    registry.register_filter_fn(filter_fn, name, aliases)
-
-
-def get_filter_fn(name: str) -> Optional[Callable[[Any, Any], bool]]:
+def get_filter_fn(name: str) -> FilterFunction:
     """
     Get a filter function by name.
 
