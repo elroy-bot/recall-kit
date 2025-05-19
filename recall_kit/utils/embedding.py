@@ -7,13 +7,43 @@ including conversion between different formats and vector operations.
 
 from __future__ import annotations
 
-import hashlib
+import functools
 import logging
 from typing import List
 
 import numpy as np
-from litellm import ContextWindowExceededError
-from litellm import embedding as litellm_embedding
+from litellm.exceptions import ContextWindowExceededError
+
+from ..protocols.base import EmbeddingFunction
+
+
+def truncate_if_context_exceeded(embedding_fn: EmbeddingFunction) -> EmbeddingFunction:
+    """
+    Decorator for embedding functions that adds error handling for context window exceeded errors.
+
+    This decorator wraps an embedding function to:
+    1. Validate that the input text is a string
+    2. Handle ContextWindowExceededError by retrying with half the text
+    3. Extract the embedding from the response structure
+
+    Args:
+        embedding_fn: The embedding function to wrap
+
+    Returns:
+        Wrapped function with error handling
+    """
+
+    @functools.wraps(embedding_fn)
+    def wrapper(model: str, text: str) -> List[float]:
+        assert isinstance(text, str), "Text must be a string"
+
+        try:
+            return embedding_fn(model, text)
+        except ContextWindowExceededError:
+            logging.info("Context window exceeded, retrying with half the text")
+            return wrapper(model, text[int(len(text) / 2) :])
+
+    return wrapper
 
 
 def calculate_similarity(embedding1: List[float], embedding2: List[float]) -> float:
@@ -27,8 +57,6 @@ def calculate_similarity(embedding1: List[float], embedding2: List[float]) -> fl
     Returns:
         Cosine similarity score between 0 and 1
     """
-    if embedding1 is None or embedding2 is None:
-        return 0.0
 
     vec1 = np.array(embedding1)
     vec2 = np.array(embedding2)
@@ -68,72 +96,3 @@ def bytes_to_embedding(embedding_bytes: bytes) -> List[float]:
     """
     embedding_array = np.frombuffer(embedding_bytes, dtype=np.float32)
     return embedding_array.tolist()
-
-
-def embedding_to_string(embedding: List[float]) -> str:
-    """
-    Convert an embedding to a comma-separated string.
-
-    Args:
-        embedding: List of float values representing an embedding
-
-    Returns:
-        Comma-separated string representation of the embedding
-    """
-    return ",".join(str(x) for x in embedding)
-
-
-def string_to_embedding(embedding_str: str) -> List[float]:
-    """
-    Convert a comma-separated string to an embedding.
-
-    Args:
-        embedding_str: Comma-separated string representation of an embedding
-
-    Returns:
-        List of float values representing the embedding
-    """
-    return [float(x) for x in embedding_str.split(",")]
-
-
-def calculate_text_hash(text: str) -> str:
-    """
-    Calculate MD5 hash of text content.
-
-    Args:
-        text: Text to hash
-
-    Returns:
-        MD5 hash of the text
-    """
-    return hashlib.md5(text.encode("utf-8")).hexdigest()
-
-
-def get_embedding(text: str, model: str = "text-embedding-3-small") -> List[float]:
-    """
-    Get embedding for text using litellm.
-
-    Args:
-        text: Text to embed
-        model: Embedding model to use
-
-    Returns:
-        List of float values representing the embedding
-    """
-    assert isinstance(text, str), "Text must be a string"
-
-    if not text:
-        return []
-
-    try:
-        return litellm_embedding(
-            model=model,
-            input=text,
-        ).data[
-            0
-        ]["embedding"]
-    except ContextWindowExceededError:
-        logging.info("Context window exceeded, retrying with half the text")
-        return get_embedding(
-            text[int(len(text) / 2) :], model
-        )  # Retry with half the text

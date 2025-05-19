@@ -189,7 +189,7 @@ def register_commands(cli):
     @click.argument("text")
     def remember(text):
         "Create a new memory"
-        memory = recall.create_memory(text)
+        memory = memory_store.create_memory(text)
         click.echo(f"Memory created: {memory.id}")
 
     @recall_group.command(name="search")
@@ -197,7 +197,7 @@ def register_commands(cli):
     @click.option("--limit", default=5, help="Maximum number of results")
     def search(query, limit):
         "Search memories"
-        results = recall.search(query, limit=limit)
+        results = memory_store.search(query, limit=limit)
         for i, result in enumerate(results, 1):
             click.echo(f"{i}. {result.text} (score: {result.score:.2f})")
 
@@ -210,7 +210,7 @@ class RecallKitModel(llm.Model):
 
     def execute(self, prompt, stream, response, conversation):
         # Retrieve relevant memories
-        memories = recall.search(prompt, limit=3)
+        memories = memory_store.search(prompt, limit=3)
 
         # Add memories to the context
         context = "Relevant memories:\n"
@@ -550,8 +550,8 @@ recall = RecallKit(
     storage=storage,
     embedding_service=embedding_service
 )
-memory = recall.create_memory("This is an important fact to remember.")
-results = recall.search("important information")
+memory = memory_store.create_memory("This is an important fact to remember.")
+results = memory_store.search("important information")
 ```
 
 #### Approach 2: Component-based Plugin System
@@ -597,8 +597,8 @@ recall = RecallKit(
 processor = MyMemoryProcessor()
 
 # Use the customized RecallKit
-recall.create_memory("This is an important fact to remember.")
-results = recall.search("important information")
+memory_store.create_memory("This is an important fact to remember.")
+results = memory_store.search("important information")
 ```
 
 
@@ -713,8 +713,8 @@ recall = RecallKit(
 )
 
 # Use the customized RecallKit
-recall.create_memory("This is an important fact to remember.")
-results = recall.search("important information")
+memory_store.create_memory("This is an important fact to remember.")
+results = memory_store.search("important information")
 ```
 
 **Pros and Cons:**

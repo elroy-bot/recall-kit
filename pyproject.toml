@@ -30,6 +30,10 @@ dependencies = [
     "litellm",
     "sqlmodel",
     "toolz",
+    "scipy",
+    "scikit-learn",
+    "fastapi>=0.100.0",
+    "uvicorn>=0.20.0",
 ]
 
 [project.optional-dependencies]
@@ -70,6 +74,23 @@ include = [
     "LICENSE",
 ]
 
+[tool.pyright]
+include = [
+    "recall_kit/**/*.py",
+    "tests/**/*.py"
+]
+exclude = [
+    "**/__pycache__",
+    ".venv",
+    ".git",
+    "dist",
+    "build",
+    "**/*.ipynb",
+    "**/**.ipynb",
+    ".vscode",
+    "**/**typing.py",
+]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
@@ -77,14 +98,14 @@ python_functions = ["test_*"]
 
 [tool.black]
 line-length = 88
-target-version = ["py39"]
+target-version = ["py311"]
 
 [tool.isort]
 profile = "black"
 line_length = 88
 
 [tool.uv]
-python = { requires-python = ">=3.9" }
+python = { requires-python = ">=3.11" }
 dev-dependencies = []
 
 [project.scripts]

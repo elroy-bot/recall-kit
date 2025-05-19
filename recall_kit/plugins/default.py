@@ -7,16 +7,18 @@ including retrieval, filtering, reranking, augmentation, embedding, and completi
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional, Type, Union
+from functools import partial
+from typing import List, Unpack
 
-from litellm import ModelResponse
-from pydantic import BaseModel
+from litellm import ChatCompletionRequest, ModelResponse  # type: ignore
+from litellm.types.utils import EmbeddingResponse
 from toolz import pipe
 from toolz.curried import filter, map, take
 
+from recall_kit.models import Memory
+
 from ..constants import ASSISTANT, CONTENT, ROLE, USER
-from ..core import EmbeddingFunction, StorageBackendProtocol
-from ..models.memory import Memory
+from ..protocols.base import EmbeddingFunction, StorageBackendProtocol
 from ..storage.sqlite import SQLiteBackend
 
 
@@ -25,7 +27,10 @@ class DefaultPlugin:
 
     @staticmethod
     def retrieve(
-        storage: StorageBackendProtocol, embedding_fn: EmbeddingFunction, request: Any
+        storage: StorageBackendProtocol,
+        embedding_model: str,
+        embedding_fn: EmbeddingFunction,
+        request: ChatCompletionRequest,
     ) -> List[Memory]:
         """
         Default retrieve function.
@@ -45,14 +50,13 @@ class DefaultPlugin:
             take(3),
             list,
             "\n".join,
-            embedding_fn,
-            take(1),
+            partial(embedding_fn, embedding_model),
             lambda e: storage.search_memories(e, limit=5),
             list,
         )
 
     @staticmethod
-    def filter(memories: List[Memory], request: Any) -> bool:
+    def filter(request: ChatCompletionRequest, memories: List[Memory]) -> List[Memory]:
         """
         Default filter function.
 
@@ -63,11 +67,10 @@ class DefaultPlugin:
         Returns:
             True if the memory should be included, False otherwise
         """
-        # Keep memories with relevance > 0.7
-        return [m for m in memories if getattr(m, "relevance", 0) > 0.7]
+        return memories
 
     @staticmethod
-    def rerank(memories: List[Memory], request: Any) -> List[Memory]:
+    def rerank(request: ChatCompletionRequest, memories: List[Memory]) -> List[Memory]:
         """
         Default rerank function.
 
@@ -78,11 +81,14 @@ class DefaultPlugin:
         Returns:
             Reranked list of memories
         """
-        # Sort by relevance
-        return sorted(memories, key=lambda m: getattr(m, "relevance", 0), reverse=True)
+
+        return memories
 
     @staticmethod
-    def augment(memories: List[Memory], request: Any) -> Any:
+    def augment(
+        request: ChatCompletionRequest,
+        memories: List[Memory],
+    ) -> ChatCompletionRequest:
         """
         Default augment function.
 
@@ -105,7 +111,7 @@ class DefaultPlugin:
         return augment_with_memories(request, memories_text)
 
     @staticmethod
-    def embedding_fn(text: str) -> List[float]:
+    def embedding_fn(model: str, text: str) -> List[float]:
         """
         Default embedding function using litellm.
 
@@ -115,18 +121,17 @@ class DefaultPlugin:
         Returns:
             List of embedding vectors
         """
-        from recall_kit.utils.embedding import get_embedding
 
-        return get_embedding(text, model="text-embedding-3-small")
+        from litellm import embedding as litellm_embedding
+
+        resp = litellm_embedding(model=model, input=[text])
+        assert isinstance(resp, EmbeddingResponse)
+
+        return resp.data[0]["embedding"]
 
     @staticmethod
     def completion_fn(
-        model: str,
-        messages: List[Dict[str, Any]],
-        max_tokens: Optional[int] = None,
-        temperature: Optional[float] = None,
-        response_format: Optional[Union[Dict[str, Any], Type[BaseModel]]] = None,
-        additional_args: Optional[Dict[str, Any]] = None,
+        **request: Unpack[ChatCompletionRequest],
     ) -> ModelResponse:
         """
         Default completion function using litellm.
@@ -142,16 +147,13 @@ class DefaultPlugin:
         Returns:
             Completion response
         """
-        from recall_kit.utils.completion import get_completion
 
-        return get_completion(
-            model=model,
-            messages=messages,
-            max_tokens=max_tokens,
-            temperature=temperature,
-            response_format=response_format,
-            additional_args=additional_args,
-        )
+        from litellm import completion as litellm_completion
+
+        resp = litellm_completion(**request)  # type: ignore
+
+        assert isinstance(resp, ModelResponse), "Response is not of type ModelResponse"
+        return resp
 
 
 # Import registration functions from registry module
