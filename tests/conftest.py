@@ -4,13 +4,13 @@ import numpy as np
 import pytest
 
 from recall_kit.core import RecallKit
-from recall_kit.storage import SQLiteBackend
+from recall_kit.storage.sqlite import SQLiteBackend
 
 
 @pytest.fixture(scope="function")
 def storage() -> Generator[SQLiteBackend, Any, None]:
     """Create a temporary SQLite database for testing."""
-    from recall_kit.storage import SQLiteBackend
+    from recall_kit.storage.sqlite import SQLiteBackend
 
     # Create an in-memory SQLite database
     db = SQLiteBackend(":memory:")

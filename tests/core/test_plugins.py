@@ -6,7 +6,6 @@ from typing import Any
 
 import pytest
 
-from recall_kit.core import StorageBackendProtocol
 from recall_kit.plugins import (
     PluginRegistry,
     call_hooks,
@@ -15,7 +14,8 @@ from recall_kit.plugins import (
     register_retrieve_fn,
     register_storage_backend,
 )
-from recall_kit.storage import SQLiteBackend
+from recall_kit.protocols.base import StorageBackendProtocol
+from recall_kit.storage.sqlite import SQLiteBackend
 from tests.conftest import MockStorageBackend, mock_embed_text
 
 

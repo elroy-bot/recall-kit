@@ -18,11 +18,18 @@ warnings.filterwarnings(
 )
 
 from recall_kit.core import RecallKit
-from recall_kit.models import Memory, MemorySource
+from recall_kit.models import Memory, MemorySource, Message, MessageSet
 from recall_kit.version import __version__
 
-from . import default_plugin
+from .plugins import default
 
 litellm.suppress_debug_info = True
 
-__all__ = ["RecallKit", "Memory", "MemorySource", "__version__"]
+__all__ = [
+    "RecallKit",
+    "Memory",
+    "MemorySource",
+    "Message",
+    "MessageSet",
+    "__version__",
+]

@@ -1,101 +1,37 @@
 """
-Storage backends for Recall Kit.
+SQLite storage backend for Recall Kit.
 
-This module provides storage backends for storing and retrieving memories,
-including SQLite backend.
+This module provides the SQLite storage backend implementation using sqlite-vec for vector search.
 """
 
 from __future__ import annotations
 
-import datetime
 import hashlib
 import json
 import logging
 import os
 import sqlite3
-import uuid
 from typing import List, Optional
 
 import numpy as np
-from sqlalchemy import Column, LargeBinary
-from sqlmodel import Field, Session, SQLModel, create_engine, select
+from sqlmodel import Session, SQLModel, create_engine, select
 
 from recall_kit.models import Memory, Message, MessageSet
+from recall_kit.protocols import StorageBackendProtocol
+from recall_kit.storage.base import (
+    EmbeddingTable,
+    MemoryTable,
+    MessageSetTable,
+    MessageTable,
+    UserTable,
+    parse_json_field,
+    serialize_json_field,
+)
 
 # Set up logging
 logger = logging.getLogger(__name__)
 
-from recall_kit.core import StorageBackendProtocol
 
-
-# SQLModel classes for database tables
-class UserTable(SQLModel, table=True):
-    """SQLModel for the users table."""
-
-    __tablename__ = "users"
-
-    id: int = Field(primary_key=True, default=None)
-    token: str = Field(unique=True)
-    created_at: datetime.datetime = Field(default_factory=datetime.datetime.now)
-
-
-class MemoryTable(SQLModel, table=True):
-    """SQLModel for the memories table."""
-
-    __tablename__ = "memories"
-
-    id: str = Field(primary_key=True)
-    text: str
-    title: str
-    source_address: Optional[str] = None
-    parent_ids: Optional[str] = None  # JSON string of parent IDs
-    created_at: datetime.datetime = Field(default_factory=datetime.datetime.now)
-    meta_data: Optional[str] = None  # JSON string of metadata
-    active: bool = Field(default=True)
-    user_id: int
-
-
-class EmbeddingTable(SQLModel, table=True):
-    """SQLModel for the embeddings table."""
-
-    __tablename__ = "embeddings"
-
-    id: str = Field(primary_key=True, default_factory=lambda: str(uuid.uuid4()))
-    source_table: str  # The table name that this embedding is for
-    source_id: str  # The ID of the record in the source table
-    embedding: bytes = Field(sa_column=Column(LargeBinary))
-    md5: str  # MD5 hash of the textual content that was embedded
-    created_at: datetime.datetime = Field(default_factory=datetime.datetime.now)
-    meta_data: Optional[str] = None  # JSON string of metadata
-
-
-class MessageTable(SQLModel, table=True):
-    """SQLModel for the messages table."""
-
-    __tablename__ = "messages"
-
-    id: str = Field(primary_key=True)
-    role: str
-    content: str
-    created_at: datetime.datetime = Field(default_factory=datetime.datetime.now)
-    meta_data: Optional[str] = None  # JSON string of metadata
-    user_id: int
-
-
-class MessageSetTable(SQLModel, table=True):
-    """SQLModel for the message_sets table."""
-
-    __tablename__ = "message_sets"
-
-    id: str = Field(primary_key=True)
-    message_ids: str  # JSON string of message IDs
-    active: bool = Field(default=True)
-    created_at: datetime.datetime = Field(default_factory=datetime.datetime.now)
-    meta_data: Optional[str] = None  # JSON string of metadata
-    user_id: int
-
-
-# Using structural subtyping without inheritance
 class SQLiteBackend:
     """SQLite storage backend using sqlite-vec for vector search."""
 
@@ -299,10 +235,10 @@ class SQLiteBackend:
             memory: The Memory object to store
         """
         # Convert parent_ids list to JSON string
-        parent_ids_json = json.dumps(memory.parent_ids) if memory.parent_ids else None
+        parent_ids_json = serialize_json_field(memory.parent_ids)
 
         # Convert metadata dict to JSON string
-        meta_data_json = json.dumps(memory.metadata) if memory.metadata else None
+        meta_data_json = serialize_json_field(memory.metadata)
 
         # Ensure user_id is set
         if not hasattr(memory, "user_id") or memory.user_id is None:
@@ -605,7 +541,7 @@ class SQLiteBackend:
             message: The Message object to store
         """
         # Convert metadata dict to JSON string
-        meta_data_json = json.dumps(message.metadata) if message.metadata else None
+        meta_data_json = serialize_json_field(message.metadata)
 
         # Ensure user_id is set
         if not hasattr(message, "user_id") or message.user_id is None:
@@ -671,9 +607,7 @@ class SQLiteBackend:
         message_ids_json = json.dumps(message_set.message_ids)
 
         # Convert metadata dict to JSON string
-        meta_data_json = (
-            json.dumps(message_set.metadata) if message_set.metadata else None
-        )
+        meta_data_json = serialize_json_field(message_set.metadata)
 
         # Ensure user_id is set
         if not hasattr(message_set, "user_id") or message_set.user_id is None:
@@ -788,9 +722,7 @@ class SQLiteBackend:
     def _table_to_message(self, message_table: MessageTable) -> Message:
         """Convert a SQLModel table object to a Message object."""
         # Parse metadata JSON
-        metadata = {}
-        if message_table.meta_data:
-            metadata = json.loads(message_table.meta_data)
+        metadata = parse_json_field(message_table.meta_data)
 
         # Create Message object
         message = Message(
@@ -810,9 +742,7 @@ class SQLiteBackend:
         message_ids = json.loads(message_set_table.message_ids)
 
         # Parse metadata JSON
-        metadata = {}
-        if message_set_table.meta_data:
-            metadata = json.loads(message_set_table.meta_data)
+        metadata = parse_json_field(message_set_table.meta_data)
 
         # Create MessageSet object
         message_set = MessageSet(
