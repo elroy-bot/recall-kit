@@ -57,13 +57,7 @@ def deserialize_embedding(embedding_bytes: bytes) -> List[float]:
     Returns:
         List of float values representing the embedding vector
     """
-    try:
-        embedding_array = np.frombuffer(embedding_bytes, dtype=np.float32)
-        return embedding_array.tolist()
-    except Exception as e:
-        logger.error(f"Error deserializing embedding: {e}")
-        # Return a small mock embedding for testing
-        return [0.1, 0.2, 0.3, 0.4]
+    return np.frombuffer(embedding_bytes, dtype=np.float32).tolist()
 
 
 def embedding_to_string(embedding: List[float]) -> str:
