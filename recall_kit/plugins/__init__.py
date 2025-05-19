@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Any, Callable, List, Optional, Type
 
-from ..core import (
+from ..protocols.base import (
     AugmentFunction,
     CompletionFunction,
     EmbeddingFunction,
@@ -19,21 +19,14 @@ from ..core import (
     StorageBackendProtocol,
 )
 
-# Import from default module
-from .default import DefaultPlugin
-
 # Import from discovery module
-from .discovery import discover_plugins, register_module_hooks
+from .discovery import discover_plugins
 
 # Import from registry module
-from .registry import (
-    MemoryProcessorProtocol,
-    PluginRegistry,
-    _check_protocol_conformance,
-    check_signature_compatibility,
-    hookimpl,
-    registry,
-)
+from .registry import _check_protocol_conformance, registry
+
+# Import from default module
+
 
 # Re-export convenience functions that use the global registry
 
@@ -81,7 +74,7 @@ def get_embedding_fn(name: str) -> Optional[EmbeddingFunction]:
     return registry.get_embedding_fn(name)
 
 
-def get_storage_backend(name: str) -> Optional[Type[StorageBackendProtocol]]:
+def get_storage_backend(name: str) -> StorageBackendProtocol:
     """
     Get a storage backend by name.
 
@@ -145,39 +138,7 @@ def register_retrieve_fn(
     registry.register_retrieve_fn(retrieve_fn, name, aliases)
 
 
-def get_retrieve_fn(name: str) -> Optional[Callable[[str, Any], List[Any]]]:
-    """
-    Get a retrieve function by name.
-
-    Args:
-        name: The name of the retrieve function
-
-    Returns:
-        The retrieve function, or None if not found
-    """
-    return registry.get_retrieve_fn(name)
-
-
-def register_filter_fn(
-    filter_fn: FilterFunction, name: str, aliases: Optional[List[str]] = None
-) -> None:
-    """
-    Register a filter function.
-
-    Args:
-        filter_fn: The filter function to register
-        name: The name of the filter function
-        aliases: Optional list of aliases for the function
-
-    Raises:
-        TypeError: If filter_fn does not conform to FilterFunction protocol
-    """
-    # Check protocol conformance before registering
-    _check_protocol_conformance(filter_fn, FilterFunction)
-    registry.register_filter_fn(filter_fn, name, aliases)
-
-
-def get_filter_fn(name: str) -> Optional[Callable[[Any, Any], bool]]:
+def get_filter_fn(name: str) -> FilterFunction:
     """
     Get a filter function by name.
 
@@ -209,7 +170,7 @@ def register_rerank_fn(
     registry.register_rerank_fn(rerank_fn, name, aliases)
 
 
-def get_rerank_fn(name: str) -> Optional[Callable[[List[Any], Any], List[Any]]]:
+def get_rerank_fn(name: str) -> RerankFunction:
     """
     Get a rerank function by name.
 
@@ -241,7 +202,7 @@ def register_augment_fn(
     registry.register_augment_fn(augment_fn, name, aliases)
 
 
-def get_augment_fn(name: str) -> Optional[Callable[[List[Any], Any], Any]]:
+def get_augment_fn(name: str) -> AugmentFunction:
     """
     Get an augment function by name.
 

@@ -11,18 +11,17 @@ import logging
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from litellm import AllMessageValues, ModelResponse  # type: ignore
 
 from recall_kit import RecallKit
-from recall_kit.api import (  # Models; Route handlers
-    ChatCompletionResponse,
-    MessageResponse,
-    MessageSetResponse,
+from recall_kit.models import MessageSet
+
+from .api.routes import (
     create_chat_completion,
     get_active_message_set,
+    get_memory_consolidator,
     get_message,
     get_message_set,
-    get_message_sets,
-    get_messages,
     get_messages_in_set,
     get_recall_kit,
     list_models,
@@ -63,6 +62,9 @@ def create_app(
 
     # Override the get_recall_kit dependency
     app.dependency_overrides[get_recall_kit] = lambda: recall
+    app.dependency_overrides[
+        get_memory_consolidator
+    ] = lambda: recall.memory_consolidator
 
     # Import litellm here to avoid requiring it for non-server use
     try:
@@ -74,23 +76,20 @@ def create_app(
         )
 
     # Register routes
-    app.post("/v1/chat/completions", response_model=ChatCompletionResponse)(
+    app.post("/v1/chat/completions", response_model=ModelResponse)(
         create_chat_completion
     )
-    app.get("/v1/messages", response_model=list[MessageResponse])(get_messages)
-    app.get("/v1/messages/{message_id}", response_model=MessageResponse)(get_message)
-    app.get("/v1/message-sets", response_model=list[MessageSetResponse])(
-        get_message_sets
-    )
-    app.get("/v1/message-sets/active", response_model=MessageSetResponse)(
+
+    app.get("/v1/messages/{message_id}", response_model=AllMessageValues)(get_message)
+    app.get("/v1/message-sets/active", response_model=MessageSet)(
         get_active_message_set
     )
-    app.get("/v1/message-sets/{message_set_id}", response_model=MessageSetResponse)(
+    app.get("/v1/message-sets/{message_set_id}", response_model=MessageSet)(
         get_message_set
     )
     app.get(
         "/v1/message-sets/{message_set_id}/messages",
-        response_model=list[MessageResponse],
+        response_model=list[AllMessageValues],
     )(get_messages_in_set)
     app.get("/v1/models")(list_models)
 

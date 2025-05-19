@@ -1,26 +1,29 @@
 """
-Plugin registry for Recall Kit.
+Plugin system for Recall Kit.
 
-This module provides the PluginRegistry class and related utilities for
-registering and retrieving plugin components.
+This module provides a plugin system for extending Recall Kit's functionality,
+including hooks for registering custom components.
 """
 
 from __future__ import annotations
 
+import importlib
+import inspect
+import pkgutil
+from types import ModuleType
 from typing import (
     Any,
     Callable,
-    Dict,
     List,
     Optional,
     Protocol,
     Type,
     TypeVar,
     get_type_hints,
-    runtime_checkable,
 )
 
-from ..protocols.base import (
+from .constants import DEFAULT
+from .protocols.base import (
     AugmentFunction,
     CompletionFunction,
     EmbeddingFunction,
@@ -83,12 +86,6 @@ T = TypeVar("T")
 # Define protocol classes for functions
 
 
-@runtime_checkable
-class MemoryProcessorProtocol(Protocol):
-    def process(self, memory: Any) -> Any:
-        ...
-
-
 def _check_protocol_conformance(
     obj: Any, protocol_class: Type[Protocol], obj_name: str = None  # type: ignore
 ) -> None:
@@ -124,47 +121,15 @@ class PluginRegistry:
 
     def __init__(self):
         """Initialize a new plugin registry."""
-        self._embedding_fns: Dict[str, EmbeddingFunction] = {}
-        self._storage_backends: Dict[str, StorageBackendProtocol] = {}
-        self._completion_fns: Dict[str, CompletionFunction] = {}
-        self._retrieve_fns: Dict[str, RetrieveFunction] = {}
-        self._filter_fns: Dict[str, FilterFunction] = {}
-        self._rerank_fns: Dict[str, RerankFunction] = {}
-        self._augment_fns: Dict[str, AugmentFunction] = {}
+        self._embedding_fns = {}
+        self._storage_backends = {}
+        self._embedding_fns = {}
+        self._completion_fns = {}
+        self._retrieve_fns = {}
+        self._filter_fns = {}
+        self._rerank_fns = {}
+        self._augment_fns = {}
         self._hooks = {}
-
-    def register_embedding_fn(
-        self, fn: EmbeddingFunction, name: str, aliases: Optional[List[str]] = None
-    ) -> None:
-        """
-        Register an embedding service.
-
-        Args:
-            fn: The embedding service class to register
-            name: The name of the embedding service
-            aliases: Optional list of aliases for the service
-
-        Raises:
-            TypeError: If fn does not conform to EmbeddingFunction protocol
-        """
-        _check_protocol_conformance(fn, EmbeddingFunction)
-
-        self._embedding_fns[name] = fn
-        if aliases:
-            for alias in aliases:
-                self._embedding_fns[alias] = fn
-
-    def get_embedding_fn(self, name: str) -> EmbeddingFunction:
-        """
-        Get an embedding function by name.
-
-        Args:
-            name: The name of the embedding function
-
-        Returns:
-            The embedding function, or None if not found
-        """
-        return self._embedding_fns[name]
 
     def register_storage_backend(
         self,
@@ -194,7 +159,7 @@ class PluginRegistry:
             for alias in aliases:
                 self._storage_backends[alias] = storage
 
-    def get_storage_backend(self, name: str) -> StorageBackendProtocol:
+    def get_storage_backend(self, name: str = DEFAULT) -> Type[StorageBackendProtocol]:
         """
         Get a storage backend by name.
 
@@ -204,10 +169,43 @@ class PluginRegistry:
         Returns:
             The storage backend class, or None if not found
         """
-        storage_backend = self._storage_backends.get(name)
-        if not storage_backend:
-            raise ValueError(f"Storage backend '{name}' not found")
-        return storage_backend
+        return self._storage_backends[name]
+
+    def register_embedding_fn(
+        self,
+        embedding_fn: EmbeddingFunction,
+        name: str,
+        aliases: Optional[List[str]] = None,
+    ) -> None:
+        """
+        Register an embedding function.
+
+        Args:
+            embedding_fn: The embedding function to register
+            name: The name of the embedding function
+            aliases: Optional list of aliases for the function
+
+        Raises:
+            TypeError: If embedding_fn does not conform to EmbeddingFunction protocol
+        """
+        _check_protocol_conformance(embedding_fn, EmbeddingFunction)
+
+        self._embedding_fns[name] = embedding_fn
+        if aliases:
+            for alias in aliases:
+                self._embedding_fns[alias] = embedding_fn
+
+    def get_embedding_fn(self, name: str) -> Optional[EmbeddingFunction]:
+        """
+        Get an embedding function by name.
+
+        Args:
+            name: The name of the embedding function
+
+        Returns:
+            The embedding function, or None if not found
+        """
+        return self._embedding_fns.get(name)
 
     def register_completion_fn(
         self,
@@ -233,7 +231,7 @@ class PluginRegistry:
             for alias in aliases:
                 self._completion_fns[alias] = completion_fn
 
-    def get_completion_fn(self, name: str) -> CompletionFunction:
+    def get_completion_fn(self, name: str) -> Optional[CompletionFunction]:
         """
         Get a completion function by name.
 
@@ -243,7 +241,7 @@ class PluginRegistry:
         Returns:
             The completion function, or None if not found
         """
-        return self._completion_fns[name]
+        return self._completion_fns.get(name)
 
     def register_retrieve_fn(
         self,
@@ -263,6 +261,7 @@ class PluginRegistry:
             TypeError: If retrieve_fn does not conform to RetrieveFunction protocol
         """
         # Check if the function conforms to the RetrieveFunction protocol
+
         _check_protocol_conformance(retrieve_fn, RetrieveFunction)
 
         self._retrieve_fns[name] = retrieve_fn
@@ -300,6 +299,7 @@ class PluginRegistry:
             TypeError: If filter_fn does not conform to FilterFunction protocol
         """
         # Check if the function conforms to the FilterFunction protocol
+
         _check_protocol_conformance(filter_fn, FilterFunction)
 
         self._filter_fns[name] = filter_fn
@@ -337,6 +337,7 @@ class PluginRegistry:
             TypeError: If rerank_fn does not conform to RerankFunction protocol
         """
         # Check if the function conforms to the RerankFunction protocol
+
         _check_protocol_conformance(rerank_fn, RerankFunction)
 
         self._rerank_fns[name] = rerank_fn
@@ -373,8 +374,8 @@ class PluginRegistry:
         Raises:
             TypeError: If augment_fn does not conform to AugmentFunction protocol
         """
-
         # Check if the function conforms to the AugmentFunction protocol
+
         _check_protocol_conformance(augment_fn, AugmentFunction)
 
         self._augment_fns[name] = augment_fn
@@ -382,7 +383,7 @@ class PluginRegistry:
             for alias in aliases:
                 self._augment_fns[alias] = augment_fn
 
-    def get_augment_fn(self, name: str) -> AugmentFunction:
+    def get_augment_fn(self, name: str) -> Optional[Callable[[List[Any], Any], Any]]:
         """
         Get an augment function by name.
 
@@ -392,7 +393,7 @@ class PluginRegistry:
         Returns:
             The augment function, or None if not found
         """
-        return self._augment_fns[name]
+        return self._augment_fns.get(name)
 
     def register_hook(self, hook_name: str, hook_func: Callable[..., Any]) -> None:
         """
@@ -450,5 +451,174 @@ def hookimpl(func: Callable[..., Any]) -> Callable[..., Any]:
     Returns:
         The decorated function
     """
+
     setattr(func, "_is_hookimpl", True)
     return func
+
+
+def discover_plugins(namespace: str = "recall_kit_plugins") -> None:
+    """
+    Discover and load plugins from a namespace.
+
+    Args:
+        namespace: The namespace to search for plugins
+    """
+    try:
+        # Find all modules in the namespace
+        plugin_modules = {
+            name: importlib.import_module(f"{namespace}.{name}")
+            for finder, name, ispkg in pkgutil.iter_modules()
+            if name.startswith(namespace)
+        }
+
+        # Register hooks from the modules
+        for name, module in plugin_modules.items():
+            register_module_hooks(module)
+    except ImportError:
+        # No plugins found
+        pass
+
+
+def register_module_hooks(module: ModuleType) -> None:
+    """
+    Register hooks from a module.
+
+    Args:
+        module: The module to register hooks from
+    """
+    for name, obj in inspect.getmembers(module):
+        # Check if the object is a function and has the _is_hookimpl attribute
+        if inspect.isfunction(obj) and getattr(obj, "_is_hookimpl", False):
+            # Determine the hook name from the function name
+            hook_name = name
+            registry.register_hook(hook_name, obj)
+
+
+def register_storage_backend(
+    backend_class: Type[StorageBackendProtocol],
+    name: str,
+    aliases: Optional[List[str]] = None,
+) -> None:
+    """
+    Register a storage backend.
+
+    Args:
+        backend_class: The storage backend class to register
+        name: The name of the storage backend
+        aliases: Optional list of aliases for the backend
+    """
+    registry.register_storage_backend(backend_class, name, aliases)
+
+
+def register_completion_fn(
+    completion_fn: CompletionFunction, name: str, aliases: Optional[List[str]] = None
+) -> None:
+    """
+    Register a completion function.
+
+    Args:
+        completion_fn: The completion function to register
+        name: The name of the completion function
+        aliases: Optional list of aliases for the function
+
+    Raises:
+        TypeError: If completion_fn does not conform to CompletionFunction protocol
+    """
+    # Check protocol conformance before registering
+    _check_protocol_conformance(completion_fn, CompletionFunction)
+    registry.register_completion_fn(completion_fn, name, aliases)
+
+
+def register_retrieve_fn(
+    retrieve_fn: RetrieveFunction, name: str, aliases: Optional[List[str]] = None
+) -> None:
+    """
+    Register a retrieve function.
+
+    Args:
+        retrieve_fn: The retrieve function to register
+        name: The name of the retrieve function
+        aliases: Optional list of aliases for the function
+
+    Raises:
+        TypeError: If retrieve_fn does not conform to RetrieveFunction protocol
+    """
+    # Check protocol conformance before registering
+    _check_protocol_conformance(retrieve_fn, RetrieveFunction)
+    registry.register_retrieve_fn(retrieve_fn, name, aliases)
+
+
+def register_filter_fn(
+    filter_fn: FilterFunction, name: str, aliases: Optional[List[str]] = None
+) -> None:
+    """
+    Register a filter function.
+
+    Args:
+        filter_fn: The filter function to register
+        name: The name of the filter function
+        aliases: Optional list of aliases for the function
+
+    Raises:
+        TypeError: If filter_fn does not conform to FilterFunction protocol
+    """
+    # Check protocol conformance before registering
+    _check_protocol_conformance(filter_fn, FilterFunction)
+    registry.register_filter_fn(filter_fn, name, aliases)
+
+
+def register_rerank_fn(
+    rerank_fn: RerankFunction, name: str, aliases: Optional[List[str]] = None
+) -> None:
+    """
+    Register a rerank function.
+
+    Args:
+        rerank_fn: The rerank function to register
+        name: The name of the rerank function
+        aliases: Optional list of aliases for the function
+
+    Raises:
+        TypeError: If rerank_fn does not conform to RerankFunction protocol
+    """
+    # Check protocol conformance before registering
+    _check_protocol_conformance(rerank_fn, RerankFunction)
+    registry.register_rerank_fn(rerank_fn, name, aliases)
+
+
+def register_augment_fn(
+    augment_fn: AugmentFunction, name: str, aliases: Optional[List[str]] = None
+) -> None:
+    """
+    Register an augment function.
+
+    Args:
+        augment_fn: The augment function to register
+        name: The name of the augment function
+        aliases: Optional list of aliases for the function
+
+    Raises:
+        TypeError: If augment_fn does not conform to AugmentFunction protocol
+    """
+    # Check protocol conformance before registering
+    _check_protocol_conformance(augment_fn, AugmentFunction)
+    registry.register_augment_fn(augment_fn, name, aliases)
+
+
+def call_hooks(hook_name: str, *args, **kwargs) -> List[Any]:
+    """
+    Call all hook functions for a hook name.
+
+    Args:
+        hook_name: The name of the hook
+        *args: Positional arguments to pass to the hook functions
+        **kwargs: Keyword arguments to pass to the hook functions
+
+    Returns:
+        List of results from the hook functions
+    """
+    return registry.call_hooks(hook_name, *args, **kwargs)
+
+
+# Initialize the plugin system
+discover_plugins()

@@ -5,15 +5,15 @@ Tests for the plugin system of Recall Kit.
 from typing import Any
 
 import pytest
+from litellm import ChatCompletionRequest
 
 from recall_kit.plugins import (
-    PluginRegistry,
     call_hooks,
     get_storage_backend,
-    hookimpl,
     register_retrieve_fn,
     register_storage_backend,
 )
+from recall_kit.plugins.registry import PluginRegistry, hookimpl
 from recall_kit.protocols.base import StorageBackendProtocol
 from recall_kit.storage.sqlite import SQLiteBackend
 from tests.conftest import MockStorageBackend, mock_embed_text
@@ -131,7 +131,7 @@ def test_hookimpl_decorator():
 
     # Check that the function has the _is_hookimpl attribute
     assert hasattr(test_hook, "_is_hookimpl")
-    assert test_hook._is_hookimpl
+    assert getattr(test_hook, "_is_hookimpl")
 
     # Check that the function still works
     assert test_hook("test") == "Decorated: test"
@@ -182,20 +182,22 @@ def test_non_compliant_retrieve_function():
 
     # Attempt to register the non-compliant function
     with pytest.raises(TypeError) as excinfo:
-        register_retrieve_fn(bad_retrieve_fn, "bad_retrieve_fn")
+        register_retrieve_fn(bad_retrieve_fn, "bad_retrieve_fn")  # type: ignore
 
     # Check that the error message mentions the specific issues
     error_msg = str(excinfo.value)
     assert "does not conform to RetrieveFunction protocol" in error_msg
 
     # Create another function with wrong return type
-    def bad_return_type(storage: Any, embedding_fn: Any, request: Any) -> str:
+    def bad_return_type(
+        storage: Any, embedding_fn: Any, request: ChatCompletionRequest
+    ) -> str:
         """This function has the right parameters but wrong return type."""
         return "This returns a string instead of List[Memory]"
 
     # Attempt to register the function with wrong return type
     with pytest.raises(TypeError) as excinfo:
-        register_retrieve_fn(bad_return_type, "bad_return_type")
+        register_retrieve_fn(bad_return_type, "bad_return_type")  # type: ignore
 
     # Check that the error message mentions return type
     error_msg = str(excinfo.value)
