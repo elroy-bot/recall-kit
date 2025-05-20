@@ -8,7 +8,7 @@ for chat completions with memory augmentation.
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from fastapi import Depends, HTTPException
 from litellm import ChatCompletionRequest, ModelResponse  # type: ignore
@@ -29,6 +29,10 @@ def get_recall_kit() -> RecallKit:
 
 
 def get_memory_consolidator() -> MemoryConsolidator:
+    raise NotImplementedError("Should be implemented in the main app")
+
+def get_storage() -> StorageBackendProtocol:
+    """Get the storage backend."""
     raise NotImplementedError("Should be implemented in the main app")
 
 
@@ -53,7 +57,7 @@ async def create_chat_completion(
 
         # Always perform auto-consolidation after each chat completion
         # Use LLM-driven consolidation
-        memory_consolidator.consolidate_memories(model=request.model)
+        memory_consolidator.consolidate_memories(model=request["model"])
         return response
 
     except Exception as e:
@@ -73,22 +77,7 @@ async def get_messages(
     Returns:
         List of all messages
     """
-    try:
-        messages = recall_kit.get_all_messages()
-        return [
-            MessageResponse(
-                id=message.id,
-                role=message.role,
-                content=message.content,
-                created_at=message.created_at.isoformat(),
-                metadata=message.metadata,
-            )
-            for message in messages
-        ]
-    except Exception as e:
-        logger.exception("Error getting messages")
-        raise HTTPException(status_code=500, detail=str(e))
-
+    return recall_kit.get_all_messages()
 
 async def get_message(
     message_id: str,
@@ -104,20 +93,13 @@ async def get_message(
     Returns:
         The message
     """
-    try:
-        message = recall_kit.get_message(message_id)
-        if not message:
-            raise HTTPException(
-                status_code=404, detail=f"Message {message_id} not found"
-            )
-        else:
-            return message
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.exception(f"Error getting message {message_id}")
-        raise HTTPException(status_code=500, detail=str(e))
+    message = recall_kit.get_message(message_id)
+    if not message:
+        raise HTTPException(
+            status_code=404, detail=f"Message {message_id} not found"
+        )
+    else:
+        return message
 
 
 async def get_message_sets(
@@ -132,18 +114,14 @@ async def get_message_sets(
     Returns:
         List of all message sets
     """
-    try:
-        # This is not implemented in the RecallKit class, so we'll need to get it from the storage
-        return recall_kit.storage.get_all_message_sets()
+    return storage.get_all_message_sets()
 
-    except Exception as e:
-        logger.exception("Error getting message sets")
-        raise HTTPException(status_code=500, detail=str(e))
+
 
 
 async def get_active_message_set(
-    recall_kit: RecallKit = Depends(get_recall_kit),
-) -> MessageSetResponse:
+    storage: StorageBackendProtocol = Depends(get_storage),
+) -> Optional[MessageSet]:
     """
     Get the active message set.
 
@@ -153,29 +131,12 @@ async def get_active_message_set(
     Returns:
         The active message set
     """
-    try:
-        message_set = recall_kit.get_active_message_set()
-        if not message_set:
-            raise HTTPException(status_code=404, detail="No active message set found")
-
-        return MessageSetResponse(
-            id=message_set.id,
-            message_ids=message_set.message_ids,
-            active=message_set.active,
-            created_at=message_set.created_at.isoformat(),
-            metadata=message_set.metadata,
-        )
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.exception("Error getting active message set")
-        raise HTTPException(status_code=500, detail=str(e))
-
+    return storage.get_active_message_set()
 
 async def get_message_set(
-    message_set_id: str,
-    recall_kit: RecallKit = Depends(get_recall_kit),
-) -> MessageSetResponse:
+    message_set_id: int,
+    storage: StorageBackendProtocol = Depends(get_storage),
+) -> MessageSet:
     """
     Get a message set by ID.
 
@@ -186,24 +147,16 @@ async def get_message_set(
     Returns:
         The message set
     """
-    try:
-        message_set = recall_kit.get_message_set(message_set_id)
-        if not message_set:
-            raise HTTPException(
-                status_code=404, detail=f"Message set {message_set_id} not found"
-            )
-        else:
-            return message_set
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.exception(f"Error getting message set {message_set_id}")
-        raise HTTPException(status_code=500, detail=str(e))
-
+    message_set =  storage.get_message_set(message_set_id)
+    if not message_set:
+        raise HTTPException(
+            status_code=404, detail=f"Message set {message_set_id} not found"
+        )
+    else:
+        return message_set
 
 async def get_messages_in_set(
-    message_set_id: str,
-    recall_kit: RecallKit = Depends(get_recall_kit),
+    message_set_id: int,
     storage: StorageBackendProtocol = Depends(get_storage),
 ) -> List[Message]:
     """
@@ -217,28 +170,13 @@ async def get_messages_in_set(
         List of messages in the message set
     """
     try:
-        message_set = recall_kit.get_message_set(message_set_id)
-        if not message_set:
+        messages = storage.get_messages_in_set(message_set_id)
+        if not messages:
             raise HTTPException(
                 status_code=404, detail=f"Message set {message_set_id} not found"
             )
+        return messages
 
-        return recall_kit.get_messages_in_set(message_set_id)
-        return [
-            MessageResponse(
-                id=message.id,
-                role=message.role,
-                content=message.content,
-                created_at=message.created_at.isoformat(),
-                metadata=message.metadata,
-            )
-            for message in messages
-        ]
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.exception(f"Error getting messages in set {message_set_id}")
-        raise HTTPException(status_code=500, detail=str(e))
 
 
 async def list_models() -> Dict[str, Any]:

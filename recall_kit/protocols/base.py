@@ -75,6 +75,15 @@ class CompletionFunction(Protocol):
         temperature: Optional[float] = None,
         response_format: Optional[Union[Dict[str, Any], Type[BaseModel]]] = None,
         additional_args: Optional[Dict[str, Any]] = None,
+        # Add foloowing parameters:
+        #           No parameter named "frequency_penalty"
+        #   No parameter named "logit_bias"
+        #   No parameter named "logprobs"
+        #   No parameter named "top_logprobs"
+        #   No parameter named "n"
+        #   No parameter named "presence_penalty"
+        #   No parameter named "seed"
+        #   No parameter named "service_tier"
     ) -> ModelResponse:
         ...
 

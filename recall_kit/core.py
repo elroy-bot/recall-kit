@@ -220,7 +220,7 @@ class RecallKit:
 
         return message_set
 
-    def get_message_set(self, message_set_id: str) -> Optional[MessageSet]:
+    def get_message_set(self, message_set_id: int) -> Optional[MessageSet]:
         """
         Get a message set by ID.
 

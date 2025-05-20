@@ -12,34 +12,35 @@ from ..protocols.base import CompletionFunction
 def memory_augmented(recall_kit, max_memories: int = 5) -> CompletionFunction:
     """
     Decorator that augments completion requests with relevant memories.
-    
+
     This decorator retrieves relevant memories from the RecallKit instance
     and adds them to the request context before passing it to the completion function.
-    
+
     Args:
         recall_kit: RecallKit instance to use for memory retrieval
         max_memories: Maximum number of memories to include in the request
-        
+
     Returns:
         Decorated completion function with memory augmentation
     """
+
     def decorator(func: CompletionFunction) -> CompletionFunction:
         @wraps(func)
         def wrapper(**kwargs) -> ModelResponse:
             # Get the request as a ChatCompletionRequest
             request = kwargs.copy()
-            
+
             # Retrieve relevant memories
             memories = recall_kit.get_relevant_memories(request)[:max_memories]
-            
+
             # If we have memories, augment the request
             if memories:
                 # Use the recall_kit's augment function to add memories to the request
                 augmented_request = recall_kit.augment_chat_request(request, memories)
-                
+
                 # Update kwargs with the augmented request
                 kwargs.update(augmented_request)
-                
+
             # Call the original function with the augmented kwargs
             return func(**kwargs)
 
