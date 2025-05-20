@@ -14,6 +14,7 @@ from litellm import ChatCompletionRequest, ModelResponse, Type  # type: ignore
 from pydantic import BaseModel
 
 from ..models.memory import Memory
+from ..models.message import Message
 
 
 # Define type protocols for the callback functions
@@ -86,7 +87,7 @@ class StorageBackendProtocol(Protocol):
     def get_memory(self, memory_id: str) -> Optional[Any]:
         ...
 
-    def get_all_memories(self) -> List[Any]:
+    def get_all_memories(self) -> List[Memory]:
         ...
 
     def search_memories(
@@ -94,19 +95,19 @@ class StorageBackendProtocol(Protocol):
     ) -> List[Any]:
         ...
 
-    def update_memory(self, memory: Any) -> None:
+    def update_memory(self, memory: Memory) -> None:
         ...
 
-    def delete_memory(self, memory_id: str) -> bool:
+    def delete_memory(self, memory_id: int) -> bool:
         ...
 
-    def store_message(self, message: Any) -> None:
+    def store_message(self, message: Message) -> None:
         ...
 
-    def get_message(self, message_id: str) -> Optional[Any]:
+    def get_message(self, message_id: str) -> Optional[Message]:
         ...
 
-    def get_all_messages(self) -> List[Any]:
+    def get_all_messages(self) -> List[Message]:
         ...
 
     def store_message_set(self, message_set: Any) -> None:

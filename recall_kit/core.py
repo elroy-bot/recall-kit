@@ -232,33 +232,6 @@ class RecallKit:
         """
         return self.storage.get_message_set(message_set_id)
 
-    def get_active_message_set(self) -> Optional[MessageSet]:
-        """
-        Get the active message set.
-
-        Returns:
-            The active MessageSet object if found, None otherwise
-        """
-        return self.storage.get_active_message_set()
-
-    def get_messages_in_set(self, message_set_id: str) -> List[Message]:
-        """
-        Get all messages in a message set.
-
-        Args:
-            message_set_id: The ID of the message set
-
-        Returns:
-            List of Message objects in the message set
-        """
-        return self.storage.get_messages_in_set(message_set_id)
-
-    def deactivate_all_message_sets(self) -> None:
-        """
-        Deactivate all message sets.
-        """
-        self.storage.deactivate_all_message_sets()
-
     def store_conversation(
         self,
         messages: List[Dict[str, str]],
@@ -277,12 +250,12 @@ class RecallKit:
             The created MessageSet object
         """
         # Get the active message set
-        active_message_set = self.get_active_message_set()
+        active_message_set = self.storage.get_active_message_set()
 
         # If there's only one user message and an active message set, add to it
         if len(messages) == 1 and messages[0].get(ROLE) == USER and active_message_set:
             # Create a new message for the user input
-            user_message = self.create_message(
+            user_message = self.storage.create_message(
                 role=USER,
                 content=messages[0].get(CONTENT, ""),
                 metadata={"type": "conversation"},
