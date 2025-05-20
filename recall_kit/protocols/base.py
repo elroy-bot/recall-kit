@@ -8,13 +8,18 @@ and storage backend protocols.
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional, Protocol, Union, Unpack, runtime_checkable
+from typing import List, Optional, Protocol, Unpack, runtime_checkable
 
-from litellm import ChatCompletionRequest, ModelResponse, Type  # type: ignore
-from pydantic import BaseModel
+from litellm import (  # type: ignore
+    AllMessageValues,
+    ChatCompletionRequest,
+    ModelResponse,
+    Type,
+)
+from sqlmodel import SQLModel
 
 from ..models.memory import Memory
-from ..models.message import Message, MessageSet
+from ..storage.base import MessageSet
 
 
 # Define type protocols for the callback functions
@@ -116,37 +121,36 @@ class StorageBackendProtocol(Protocol):
     ) -> List[Memory]:
         ...
 
+    def fetch_embedding(
+        self, source_table: Type[SQLModel], source_id: int
+    ) -> List[float]:
+        ...
+
     def update_memory(self, memory: Memory) -> None:
         ...
 
     def delete_memory(self, memory_id: int) -> bool:
         ...
 
-    def store_message(self, message: Message) -> Message:
+    def store_message(self, message: AllMessageValues) -> int:
         ...
 
-    def get_message(self, message_id: int) -> Optional[Message]:
+    def get_message(self, message_id: int) -> Optional[AllMessageValues]:
         ...
 
-    def get_all_messages(self) -> List[Message]:
+    def store_message_set(self, message_set: MessageSet) -> int:
         ...
 
-    def store_message_set(self, message_set: MessageSet) -> None:
-        ...
-
-    def get_message_set(self, message_set_id: str) -> Optional[MessageSet]:
+    def get_message_set(self, message_set_id: int) -> Optional[MessageSet]:
         ...
 
     def get_active_message_set(self) -> Optional[MessageSet]:
         ...
 
-    def get_messages_in_set(self, message_set_id: str) -> List[Message]:
+    def get_messages_in_set(self, message_set_id: int) -> List[AllMessageValues]:
         ...
 
     def deactivate_all_message_sets(self) -> None:
-        ...
-
-    def get_all_message_sets(self) -> List[MessageSet]:
         ...
 
     def create_user(self, token: str) -> int:

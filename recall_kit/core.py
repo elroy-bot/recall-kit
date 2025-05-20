@@ -13,14 +13,17 @@ import json
 from functools import partial
 from typing import Any, Dict, List, Optional, TypeVar
 
-from litellm import ChatCompletionRequest, ChatCompletionUserMessage, Type  # type: ignore
+from litellm import (  # type: ignore
+    ChatCompletionRequest,
+    ChatCompletionUserMessage,
+    Type,
+)
 from toolz import pipe
 
-from .storage.base import Memory, Message, MessageSet
-
+from .constants import CONTENT, ROLE, TOOL
 from .repository.memory_store import MemoryStore
-
-from .constants import ASSISTANT, CONTENT, ROLE, TOOL, USER
+from .storage.base import Memory, MessageSet
+from .utils.messaging import to_assistant_message, to_tool_message
 
 # Type variable for the RecallKit class
 T = TypeVar("T", bound="RecallKit")
@@ -162,34 +165,13 @@ class RecallKit:
 
         return augmented_request
 
-    def get_message(self, message_id: int) -> Optional[Message]:
-        """
-        Get a message by ID.
-
-        Args:
-            message_id: The ID of the message to retrieve
-
-        Returns:
-            The Message object if found, None otherwise
-        """
-        return self.storage.get_message(message_id)
-
-    def get_all_messages(self) -> List[Message]:
-        """
-        Get all messages.
-
-        Returns:
-            List of all Message objects
-        """
-        return self.storage.get_all_messages()
-
     def create_message_set(
         self,
         message_ids: List[int],
         active: bool = True,
         meta_data: Optional[Dict[str, Any]] = None,
         user_id: Optional[int] = None,
-    ) -> MessageSet:
+    ) -> int:
         """
         Create a new message set.
 
@@ -213,18 +195,16 @@ class RecallKit:
         assert isinstance(user_id, int), "user_id must be an integer"
 
         message_set = MessageSet(
-            message_ids=json.dumps(message_ids),
+            _message_ids=json.dumps(message_ids),
             active=active,
             meta_data=json.dumps(meta_data or {}),
             user_id=user_id,
         )
 
         # Store the message set
-        self.storage.store_message_set(message_set)
+        return self.storage.store_message_set(message_set)
 
-        return message_set
-
-    def get_message_set(self, message_set_id: str) -> Optional[MessageSet]:
+    def get_message_set(self, message_set_id: int) -> Optional[MessageSet]:
         """
         Get a message set by ID.
 
@@ -235,201 +215,6 @@ class RecallKit:
             The MessageSet object if found, None otherwise
         """
         return self.storage.get_message_set(message_set_id)
-
-    def store_conversation(
-        self,
-        messages: List[Dict[str, str]],
-        response: Any,
-        user_id: int,
-    ) -> MessageSet:
-        """
-        Store a conversation as a message set.
-
-        Args:
-            messages: List of messages in the conversation
-            response: The response from the LLM
-            user_id: ID of the user who owns this conversation
-
-        Returns:
-            The created MessageSet object
-        """
-        # Get the active message set
-        active_message_set = self.storage.get_active_message_set()
-
-        # If there's only one user message and an active message set, add to it
-        if len(messages) == 1 and messages[0].get(ROLE) == USER and active_message_set:
-            # Create a new message for the user input
-            user_message = self.storage.store_message(
-                Message(
-                    ChatCompletionUserMessage(
-                        role=USER,
-                        content=messages[0].get(CONTENT, ""),
-                        metadata={"type": "conversation"},
-                        user_id=user_id,
-                        tool_call_id=messages[0].get("tool_call_id"),
-                        tool_calls=json.loads(messages[0].get("tool_calls"))
-                        if messages[0].get("tool_calls")
-                        else None,
-                    )
-                )
-            )
-
-            # Create a new message for the assistant response
-            # Handle both object-style and dict-style responses
-            if hasattr(response, "choices"):
-                assistant_content = response.choices[0].message.content
-            elif isinstance(response, dict) and "choices" in response:
-                choice = response["choices"][0]
-                if isinstance(choice, dict) and "message" in choice:
-                    assistant_content = choice["message"].get(CONTENT, "")
-                else:
-                    return active_message_set
-            else:
-                return active_message_set
-
-            assistant_message = self.storage.store_message(
-                Message(
-                    role=ASSISTANT,
-                    content=assistant_content,
-                    metadata={"type": "conversation"},
-                    user_id=user_id,
-                    tool_call_id=None,
-                    tool_calls=json.loads(response.choices[0].message.tool_calls) if hasattr(response.choices[0].message, "tool_calls") else None,  # type: ignore
-                )
-            )
-
-            # Update the message set with the new messages
-            message_ids = active_message_set.message_ids + [
-                user_message.id,
-                assistant_message.id,
-            ]
-
-            # Create a new message set with the updated message IDs
-            return self.create_message_set(
-                message_ids=message_ids,
-                active=True,
-                metadata={"type": "conversation"},
-                user_id=user_id,
-            )
-        else:
-            # Create new messages for each message in the conversation
-            message_ids = []
-
-            # If there's an active message set, check for duplicate messages
-            existing_messages = []
-            if active_message_set:
-                existing_messages = self.storage.get_messages_in_set(
-                    active_message_set.id
-                )
-
-            # Process each message
-            for i, msg in enumerate(messages):
-                role = msg.get(ROLE, "")
-                content = msg.get(CONTENT, "")
-                tool_call_id = msg.get("tool_call_id")
-                tool_calls = msg.get("tool_calls")
-
-                # Check if this message already exists in the active message set
-                duplicate = False
-                for existing_msg in existing_messages:
-                    if existing_msg.role == role and existing_msg.content == content:
-                        message_ids.append(existing_msg.id)
-                        duplicate = True
-                        break
-
-                # If not a duplicate, create a new message
-                if not duplicate:
-                    # Handle tool messages properly
-                    if (
-                        role == TOOL
-                        and i > 0
-                        and messages[i - 1].get(ROLE) == ASSISTANT
-                    ):
-                        # If tool_call_id is not provided, generate one
-                        if not tool_call_id:
-                            import uuid
-
-                            # Use a shorter prefix to ensure ID is under 40 characters
-                            tool_call_id = f"c_{str(uuid.uuid4())}"
-
-                        message = self.storage.store_message(
-                            Message(
-                                role=role,
-                                content=content,
-                                metadata={"type": "conversation"},
-                                user_id=user_id,
-                                tool_call_id=tool_call_id,
-                                tool_calls=None,
-                            )
-                        )
-                    elif role == ASSISTANT and tool_calls:
-                        message = self.storage.store_message(
-                            Message(
-                                role=role,
-                                content=content,
-                                metadata={"type": "conversation"},
-                                user_id=user_id,
-                                tool_call_id=None,
-                                tool_calls=json.loads(tool_calls),
-                            )
-                        )
-                    else:
-                        message = self.storage.store_message(
-                            Message(
-                                role=role,
-                                content=content,
-                                metadata={"type": "conversation"},
-                                user_id=user_id,
-                                tool_call_id=tool_call_id,
-                                tool_calls=None,
-                            )
-                        )
-                    message_ids.append(message.id)
-
-            # Create a message for the assistant response
-            # Handle both object-style and dict-style responses
-            if hasattr(response, "choices"):
-                assistant_content = response.choices[0].message.content
-            elif isinstance(response, dict) and "choices" in response:
-                choice = response["choices"][0]
-                if isinstance(choice, dict) and "message" in choice:
-                    assistant_content = choice["message"].get(CONTENT, "")
-                else:
-                    # Skip adding assistant message if we can't extract content
-                    return self.create_message_set(
-                        message_ids=message_ids,
-                        active=True,
-                        metadata={"type": "conversation"},
-                        user_id=user_id,
-                    )
-            else:
-                # Skip adding assistant message if response format is unexpected
-                return self.create_message_set(
-                    message_ids=message_ids,
-                    active=True,
-                    metadata={"type": "conversation"},
-                    user_id=user_id,
-                )
-
-            assistant_message = self.storage.store_message(
-                Message(
-                    role=ASSISTANT,
-                    content=assistant_content,
-                    metadata={"type": "conversation"},
-                    user_id=user_id,
-                    tool_call_id=None,
-                    tool_calls=json.loads(response.choices[0].message.tool_calls) if hasattr(response.choices[0].message, "tool_calls") else None,  # type: ignore
-                )
-            )
-            message_ids.append(assistant_message.id)
-
-            # Create a new message set with the messages
-            return self.create_message_set(
-                message_ids=message_ids,
-                active=True,
-                metadata={"type": "conversation"},
-                user_id=user_id,
-            )
 
     def compress_messages(
         self,
@@ -569,7 +354,7 @@ class RecallKit:
                     ]
 
                 tool_message = {
-                    "role": TOOL,
+                    ROLE: TOOL,
                     CONTENT: summary_content,
                     "metadata": {"type": "summary", "memory_id": memory.id},
                     "tool_call_id": tool_call_id,
@@ -594,7 +379,6 @@ class RecallKit:
         # Create a new message set with the kept messages and mark the old one inactive
         if result:
             # Store the messages in the database
-            message_objects = []
             for i, msg in enumerate(result):
                 role = msg.get(ROLE, "")
                 tool_call_id = msg.get("tool_call_id")
@@ -602,29 +386,23 @@ class RecallKit:
 
                 # Create message with appropriate parameters based on role
                 if role == TOOL and tool_call_id:
-                    message = self.create_message(
-                        role=role,
-                        content=msg.get(CONTENT, ""),
-                        metadata=msg.get("metadata", {}),
-                        tool_call_id=tool_call_id,
+                    message_id = self.storage.store_message(
+                        to_tool_message(
+                            content=msg.get(CONTENT, ""), tool_call_id=tool_call_id
+                        )
                     )
-                elif role == ASSISTANT and tool_calls:
-                    message = self.create_message(
-                        role=role,
-                        content=msg.get(CONTENT, ""),
-                        metadata=msg.get("metadata", {}),
-                        tool_calls=tool_calls,
+                elif role == ASSISTANT:
+                    message_id = self.storage.store_message(
+                        to_assistant_message(
+                            content=msg.get(CONTENT, ""),
+                            tool_calls=tool_calls,
+                        )
                     )
+
                 else:
-                    message = self.create_message(
-                        role=role,
-                        content=msg.get(CONTENT, ""),
-                        metadata=msg.get("metadata", {}),
-                    )
-                message_objects.append(message)
+                    raise NotImplementedError("Unexpected)")
 
             # Create a new message set
-            message_ids = [msg.id for msg in message_objects]
 
             # If we have an existing message set, mark it inactive
             old_message_set = self.storage.get_active_message_set()
@@ -637,7 +415,6 @@ class RecallKit:
             self.create_message_set(
                 message_ids=message_ids,
                 active=True,
-                metadata={"compressed": True},
             )
 
         return result

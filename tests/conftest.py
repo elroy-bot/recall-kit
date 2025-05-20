@@ -2,6 +2,7 @@ from typing import Any, Generator, List, Optional
 
 import numpy as np
 import pytest
+from litellm import AllMessageValues
 
 from recall_kit.core import RecallKit
 from recall_kit.storage.sqlite import SQLiteBackend
@@ -84,9 +85,6 @@ class MockStorageBackend:
     def get_message(self, message_id):
         return self.messages.get(message_id)
 
-    def get_all_messages(self):
-        return list(self.messages.values())
-
     def store_message_set(self, message_set):
         self.message_sets[message_set.id] = message_set
 
@@ -99,18 +97,15 @@ class MockStorageBackend:
                 return message_set
         return None
 
-    def get_messages_in_set(self, message_set_id):
+    def get_messages_in_set(self, message_set_id) -> AllMessageValues:
         message_set = self.get_message_set(message_set_id)
         if not message_set:
             return []
-        return [self.get_message(msg_id) for msg_id in message_set.message_ids]
+        return [self.get_message(msg_id).data for msg_id in message_set.message_ids]  #
 
     def deactivate_all_message_sets(self):
         for message_set in self.message_sets.values():
             message_set.active = False
-
-    def get_all_message_sets(self):
-        return list(self.message_sets.values())
 
     def create_user(self, token: str) -> int:
         """Create a new user with the given token."""

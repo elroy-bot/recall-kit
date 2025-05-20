@@ -415,9 +415,9 @@ def test_chat_completion(
         len(kwargs["messages"]) == 3
     )  # System message + user message + assistant message
     # First message should be system
-    assert kwargs["messages"][0]["role"] == "system"
+    assert kwargs["messages"][0][ROLE] == "system"
     # Second message should be user
-    assert kwargs["messages"][1]["role"] == "user"
+    assert kwargs["messages"][1][ROLE] == "user"
     assert kwargs["messages"][1]["content"] == "What is the meaning of life?"
     # Third message should be assistant (from a previous interaction or initialization)
-    assert kwargs["messages"][2]["role"] == "assistant"
+    assert kwargs["messages"][2][ROLE] == "assistant"

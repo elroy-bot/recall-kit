@@ -13,20 +13,6 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from recall_kit import RecallKit
-from recall_kit.api import (  # Models; Route handlers
-    ChatCompletionResponse,
-    MessageResponse,
-    MessageSetResponse,
-    create_chat_completion,
-    get_active_message_set,
-    get_message,
-    get_message_set,
-    get_message_sets,
-    get_messages,
-    get_messages_in_set,
-    get_recall_kit,
-    list_models,
-)
 
 # Set up logging
 logger = logging.getLogger(__name__)

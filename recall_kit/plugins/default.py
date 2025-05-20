@@ -7,10 +7,9 @@ including retrieval, filtering, reranking, augmentation, embedding, and completi
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional, Type, Union, Unpack
+from typing import List, Unpack
 
 from litellm import ChatCompletionRequest, ModelResponse  # type: ignore
-from pydantic import BaseModel
 from toolz import pipe
 from toolz.curried import filter, map, take
 
@@ -54,7 +53,7 @@ class DefaultPlugin:
         )
 
     @staticmethod
-    def filter(memories: List[Memory], request: ChatCompletionRequest) -> List[Memory]:
+    def filter(request: ChatCompletionRequest, memories: List[Memory]) -> List[Memory]:
         """
         Default filter function.
 
@@ -76,7 +75,7 @@ class DefaultPlugin:
         return answers
 
     @staticmethod
-    def rerank(memories: List[Memory], request: ChatCompletionRequest) -> List[Memory]:
+    def rerank(request: ChatCompletionRequest, memories: List[Memory]) -> List[Memory]:
         """
         Default rerank function.
 
@@ -95,7 +94,8 @@ class DefaultPlugin:
 
     @staticmethod
     def augment(
-        memories: List[Memory], request: ChatCompletionRequest
+        request: ChatCompletionRequest,
+        memories: List[Memory],
     ) -> ChatCompletionRequest:
         """
         Default augment function.
@@ -154,7 +154,7 @@ class DefaultPlugin:
 
         from litellm import completion as litellm_completion
 
-        resp = litellm_completion(**request)
+        resp = litellm_completion(**request)  # type: ignore
 
         assert isinstance(resp, ModelResponse), "Response is not of type ModelResponse"
         return resp

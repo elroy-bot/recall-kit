@@ -1,3 +1,4 @@
+import json
 from typing import Any, Dict, List, Optional
 
 from ..models.memory import Memory
@@ -51,9 +52,8 @@ class MemoryStore:
         memory = Memory(
             text=text,
             title=title,
-            embedding=self.embedding(text),
             source_address=source_address,
-            metadata=metadata or {},
+            _meta_data=json.dumps(metadata or {}),
             user_id=user_id,
         )
 

@@ -6,12 +6,10 @@ This module contains the Memory and MemorySource classes used throughout Recall 
 
 from __future__ import annotations
 
-import datetime
 import json
-import uuid
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field
 
 from ..storage.base import Memory
 
@@ -48,6 +46,6 @@ class MemorySource(BaseModel):
             text=self.text,
             title=self.title,
             source_address=self.address,
-            meta_data=json.dumps(self.metadata),
+            _meta_data=json.dumps(self.metadata),
             user_id=self.user_id,
         )

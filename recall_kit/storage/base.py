@@ -10,8 +10,7 @@ from __future__ import annotations
 import datetime
 import json
 import logging
-import uuid
-from typing import Any, Optional
+from typing import Any, Dict, List, Optional
 
 from litellm import AllMessageValues
 from sqlalchemy import Column, LargeBinary
@@ -37,11 +36,50 @@ class Memory(SQLModel, table=True):
     text: str
     title: str
     source_address: Optional[str] = None
-    parent_ids: Optional[str] = None  # JSON string of parent IDs
+    _parent_ids: Optional[str] = None  # JSON string of parent IDs
     created_at: datetime.datetime = Field(default_factory=datetime.datetime.now)
-    meta_data: Optional[str] = None  # JSON string of metadata
+    _meta_data: Optional[str] = None  # JSON string of metadata
     active: bool = Field(default=True)
     user_id: int
+
+    @property
+    def meta_data(self) -> Dict[str, Any]:
+        """Parse the meta_data field into a dictionary."""
+        if self._meta_data:
+            try:
+                return json.loads(self._meta_data)
+            except json.JSONDecodeError:
+                logger.warning(f"Failed to parse meta_data: {self._meta_data}")
+        return {}
+
+    @meta_data.setter
+    def meta_data(self, value: Dict[str, Any]) -> None:
+        """Set the meta_data field from a dictionary."""
+        assert isinstance(value, dict), "meta_data must be a dictionary"
+        self._meta_data = json.dumps(value)
+
+    @property
+    def parent_ids(self) -> List[int]:
+        """Parse the parent_ids field into a list of integers."""
+        if self._parent_ids:
+            try:
+                return json.loads(self._parent_ids)
+            except json.JSONDecodeError:
+                logger.warning(f"Failed to parse parent_ids: {self._parent_ids}")
+        return []
+
+    @parent_ids.setter
+    def parent_ids(self, value: List[int]) -> None:
+        """Set the parent IDs from a list of integers."""
+        self._parent_ids = json.dumps(value)
+
+    @property
+    def relevance(self) -> Optional[float]:
+        return getattr(self, "_relevance")
+
+    @relevance.setter
+    def relevance(self, val: float) -> None:
+        setattr(self, "_relevance", val)
 
 
 class Embedding(SQLModel, table=True):
@@ -59,26 +97,36 @@ class Embedding(SQLModel, table=True):
 class Message(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     created_at: datetime.datetime = Field(default_factory=datetime.datetime.now)
-    text: str = Field(default="")
+    _data: str = Field(default="")
 
-    def set_message_value(self, message_values: AllMessageValues) -> None:
-        """Serialize AllMessageValues to the text column"""
-        self.text = json.dumps(message_values)
-
-    def get_message_value(self) -> AllMessageValues:
+    @property
+    def data(self) -> AllMessageValues:
         """Deserialize text column to AllMessageValues"""
-        return json.loads(self.text)
+        return json.loads(self._data)
+
+    @data.setter
+    def data(self, value: AllMessageValues) -> None:
+        """Serialize AllMessageValues to the text column"""
+        assert isinstance(value, dict), "data must be a dictionary"
+        self._data = json.dumps(value)
 
 
 class MessageSet(SQLModel, table=True):
     """SQLModel for the message_sets table."""
 
     id: Optional[int] = Field(default=None, primary_key=True)
-    message_ids: str  # JSON string of message IDs
+    _message_ids: str  # JSON string of message IDs
     active: bool = Field(default=True)
     created_at: datetime.datetime = Field(default_factory=datetime.datetime.now)
     meta_data: Optional[str] = None  # JSON string of metadata
     user_id: int
+
+    @property
+    def message_ids(self) -> List[int]:
+        if not self._message_ids:
+            return []
+        else:
+            return json.loads(self._message_ids)
 
 
 # Shared utility functions for storage backends

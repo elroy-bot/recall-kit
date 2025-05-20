@@ -14,17 +14,16 @@ import sqlite3
 from typing import List, Optional
 
 import numpy as np
+from litellm import AllMessageValues, Type
 from sqlmodel import Session, SQLModel, create_engine, desc, select
 
-from recall_kit.models import Memory, Message, MessageSet
 from recall_kit.protocols import StorageBackendProtocol
 from recall_kit.storage.base import (
-    EmbeddingTable,
-    MemoryTable,
-    MessageSetTable,
-    MessageTable,
-    UserTable,
-    parse_json_field,
+    Embedding,
+    Memory,
+    Message,
+    MessageSet,
+    User,
     serialize_json_field,
 )
 
@@ -151,10 +150,10 @@ class SQLiteBackend:
 
     def migrate_embeddings(self) -> None:
         """
-        Migrate embeddings from the old schema (embedded in MemoryTable) to the new schema (separate EmbeddingTable).
+        Migrate embeddings from the old schema (embedded in Memory) to the new schema (separate Embedding).
 
-        This function should be called once when upgrading from a version that stored embeddings in the MemoryTable
-        to a version that uses a separate EmbeddingTable.
+        This function should be called once when upgrading from a version that stored embeddings in the Memory
+        to a version that uses a separate Embedding.
         """
         logger.info("Starting embedding migration...")
 
@@ -196,9 +195,9 @@ class SQLiteBackend:
                     # Calculate MD5 hash of the text content
                     md5_hash = hashlib.md5(text.encode("utf-8")).hexdigest()
 
-                    # Store in the new EmbeddingTable
+                    # Store in the new Embedding
                     with Session(self.engine) as session:
-                        embedding_table = EmbeddingTable(
+                        embedding_table = Embedding(
                             source_table="memories",
                             source_id=memory_id,
                             embedding=embedding_bytes,
@@ -227,6 +226,11 @@ class SQLiteBackend:
         finally:
             conn.close()
 
+    def fetch_embedding(
+        self, source_table: Type[SQLModel], source_id: int
+    ) -> List[float]:
+        raise NotImplementedError
+
     def store_memory(self, memory: Memory) -> None:
         """
         Store a memory in the SQLite database.
@@ -245,14 +249,14 @@ class SQLiteBackend:
             memory.user_id = self.get_default_user_id()
 
         # Create SQLModel object for memory
-        memory_table = MemoryTable(
+        stored_memory = Memory(
             id=memory.id,
             text=memory.text,
             title=memory.title,
             source_address=memory.source_address,
-            parent_ids=parent_ids_json,
+            _parent_ids=parent_ids_json,
             created_at=memory.created_at,
-            meta_data=meta_data_json,
+            _meta_data=meta_data_json,
             active=memory.active,
             user_id=memory.user_id,
         )
@@ -260,7 +264,7 @@ class SQLiteBackend:
         # Insert or update memory in database
         with Session(self.engine) as session:
             # Merge will insert or update as needed
-            session.merge(memory_table)
+            session.merge(stored_memory)
             session.commit()
 
         # Handle embedding separately
@@ -275,9 +279,9 @@ class SQLiteBackend:
             # Store embedding in the embeddings table
             with Session(self.engine) as session:
                 # Check if we already have an embedding for this memory
-                statement = select(EmbeddingTable).where(
-                    EmbeddingTable.source_table == "memories",
-                    EmbeddingTable.source_id == memory.id,
+                statement = select(Embedding).where(
+                    Embedding.source_table == "memories",
+                    Embedding.source_id == memory.id,
                 )
                 existing_embedding = session.exec(statement).first()
 
@@ -288,7 +292,7 @@ class SQLiteBackend:
                     session.merge(existing_embedding)
                 else:
                     # Create new embedding record
-                    embedding_table = EmbeddingTable(
+                    embedding_table = Embedding(
                         source_table="memories",
                         source_id=memory.id,
                         embedding=embedding_bytes,
@@ -341,12 +345,12 @@ class SQLiteBackend:
             The Memory object if found, None otherwise
         """
         with Session(self.engine) as session:
-            memory_table = session.get(MemoryTable, memory_id)
+            stored_memory = session.get(Memory, memory_id)
 
-            if not memory_table:
+            if not stored_memory:
                 return None
 
-            return self._table_to_memory(memory_table)
+            return self._table_to_memory(stored_memory)
 
     def get_all_memories(self) -> List[Memory]:
         """
@@ -356,11 +360,11 @@ class SQLiteBackend:
             List of all Memory objects
         """
         with Session(self.engine) as session:
-            statement = select(MemoryTable)
-            memory_tables = session.exec(statement).all()
+            statement = select(Memory)
+            stored_memorys = session.exec(statement).all()
 
             return [
-                self._table_to_memory(memory_table) for memory_table in memory_tables
+                self._table_to_memory(stored_memory) for stored_memory in stored_memorys
             ]
 
     def search_memories(
@@ -380,46 +384,33 @@ class SQLiteBackend:
         cursor = conn.cursor()
         memories = []
 
-        try:
-            # Convert query embedding to comma-separated string for sqlite-vec
-            query_str = ",".join(str(x) for x in query_embedding)
+        # Convert query embedding to comma-separated string for sqlite-vec
+        query_str = ",".join(str(x) for x in query_embedding)
 
-            # Search using cosine similarity
-            cursor.execute(
-                """
-                SELECT m.id, vss_cosine_similarity(?, mi.embedding) as relevance
-                FROM memories_index mi
-                JOIN memories m ON mi.id = m.id
-                ORDER BY relevance DESC
-                LIMIT ?
-                """,
-                (query_str, limit),
-            )
+        # Search using cosine similarity
+        cursor.execute(
+            """
+            SELECT m.id, vss_cosine_similarity(?, mi.embedding) as relevance
+            FROM memories_index mi
+            JOIN memories m ON mi.id = m.id
+            ORDER BY relevance DESC
+            LIMIT ?
+            """,
+            (query_str, limit),
+        )
 
-            rows = cursor.fetchall()
+        rows = cursor.fetchall()
 
-            # Get memory objects by ID and set relevance
-            with Session(self.engine) as session:
-                for row in rows:
-                    memory_id = row["id"]
-                    relevance = float(row["relevance"])
+        # Get memory objects by ID and set relevance
+        with Session(self.engine) as session:
+            for row in rows:
+                memory_id = row["id"]
+                relevance = float(row["relevance"])
 
-                    memory_table = session.get(MemoryTable, memory_id)
-                    if memory_table:
-                        memory = self._table_to_memory(memory_table)
-                        memory.relevance = relevance
-                        memories.append(memory)
-
-        except sqlite3.OperationalError:
-            # For testing purposes, just return some memories without vector search
-            logger.debug("Vector search not available, using fallback search")
-            with Session(self.engine) as session:
-                statement = select(MemoryTable).limit(limit)
-                memory_tables = session.exec(statement).all()
-
-                for memory_table in memory_tables:
-                    memory = self._table_to_memory(memory_table)
-                    memory.relevance = 0.5
+                stored_memory = session.get(Memory, memory_id)
+                if stored_memory:
+                    memory = self._table_to_memory(stored_memory)
+                    memory.relevance = relevance
                     memories.append(memory)
 
         conn.close()
@@ -449,17 +440,17 @@ class SQLiteBackend:
 
         # Delete from SQLModel table
         with Session(self.engine) as session:
-            memory_table = session.get(MemoryTable, memory_id)
-            if memory_table:
-                session.delete(memory_table)
+            stored_memory = session.get(Memory, memory_id)
+            if stored_memory:
+                session.delete(stored_memory)
                 session.commit()
                 deleted = True
 
         # Delete the corresponding embedding
         with Session(self.engine) as session:
-            statement = select(EmbeddingTable).where(
-                EmbeddingTable.source_table == "memories",
-                EmbeddingTable.source_id == memory_id,
+            statement = select(Embedding).where(
+                Embedding.source_table == "memories",
+                Embedding.source_id == memory_id,
             )
             embedding_table = session.exec(statement).first()
             if embedding_table:
@@ -483,86 +474,25 @@ class SQLiteBackend:
 
         return deleted
 
-    def _table_to_memory(self, memory_table: MemoryTable) -> Memory:
-        """Convert a SQLModel table object to a Memory object."""
-        # Retrieve embedding from EmbeddingTable
-        embedding = None
-        with Session(self.engine) as session:
-            statement = select(EmbeddingTable).where(
-                EmbeddingTable.source_table == "memories",
-                EmbeddingTable.source_id == memory_table.id,
-            )
-            embedding_table = session.exec(statement).first()
-
-            if embedding_table and embedding_table.embedding:
-                try:
-                    embedding_array = np.frombuffer(
-                        embedding_table.embedding, dtype=np.float32
-                    )
-                    embedding = embedding_array.tolist()
-                except:
-                    # For testing purposes, use a mock embedding
-                    embedding = [0.1, 0.2, 0.3, 0.4]
-                    logger.debug(
-                        "Error converting embedding bytes, using mock embedding"
-                    )
-
-        # Parse parent_ids JSON
-        parent_ids = []
-        if memory_table.parent_ids:
-            parent_ids = json.loads(memory_table.parent_ids)
-
-        # Parse metadata JSON
-        metadata = {}
-        if memory_table.meta_data:
-            metadata = json.loads(memory_table.meta_data)
-
-        # Create Memory object
-        memory = Memory(
-            id=memory_table.id,
-            text=memory_table.text,
-            title=memory_table.title,
-            embedding=embedding,
-            source_address=memory_table.source_address,
-            parent_ids=parent_ids,
-            created_at=memory_table.created_at,
-            metadata=metadata,
-            active=memory_table.active,
-            user_id=memory_table.user_id,
-        )
-
-        return memory
-
-    def store_message(self, message: Message) -> None:
+    def store_message(self, message: AllMessageValues) -> int:
         """
         Store a message in the SQLite database.
 
         Args:
             message: The Message object to store
         """
-        # Convert metadata dict to JSON string
-        meta_data_json = serialize_json_field(message.metadata)
-
-        # Ensure user_id is set
-        if not hasattr(message, "user_id") or message.user_id is None:
-            message.user_id = self.get_default_user_id()
 
         # Create SQLModel object
-        message_table = MessageTable(
-            id=message.id,
-            role=message.role,
-            content=message.content,
-            created_at=message.created_at,
-            meta_data=meta_data_json,
-            user_id=message.user_id,
-        )
-
+        stored_message = Message(_data=json.dumps(message))
         # Insert or update in database
         with Session(self.engine) as session:
-            session.merge(message_table)
+            session.merge(stored_message)
             session.commit()
+            session.refresh(stored_message)
+            assert stored_message.id is not None, "Failed to store message"
+            return stored_message.id
 
-    def get_message(self, message_id: int) -> Optional[Message]:
+    def get_message(self, message_id: int) -> Optional[AllMessageValues]:
         """
         Retrieve a message by ID.
 
@@ -573,30 +503,14 @@ class SQLiteBackend:
             The Message object if found, None otherwise
         """
         with Session(self.engine) as session:
-            message_table = session.get(MessageTable, message_id)
+            stored_message = session.get(Message, message_id)
 
-            if not message_table:
+            if not stored_message:
                 return None
 
-            return self._table_to_message(message_table)
+            return stored_message.data
 
-    def get_all_messages(self) -> List[Message]:
-        """
-        Retrieve all messages.
-
-        Returns:
-            List of all Message objects
-        """
-        with Session(self.engine) as session:
-            statement = select(MessageTable)
-            message_tables = session.exec(statement).all()
-
-            return [
-                self._table_to_message(message_table)
-                for message_table in message_tables
-            ]
-
-    def store_message_set(self, message_set: MessageSet) -> None:
+    def store_message_set(self, message_set: MessageSet) -> int:
         """
         Store a message set in the SQLite database.
 
@@ -614,7 +528,7 @@ class SQLiteBackend:
             message_set.user_id = self.get_default_user_id()
 
         # Create SQLModel object
-        message_set_table = MessageSetTable(
+        stored_message_set = MessageSet(
             id=message_set.id,
             message_ids=message_ids_json,
             active=message_set.active,
@@ -625,10 +539,13 @@ class SQLiteBackend:
 
         # Insert or update in database
         with Session(self.engine) as session:
-            session.merge(message_set_table)
+            session.merge(stored_message_set)
             session.commit()
+            session.refresh(stored_message_set)
+            assert stored_message_set.id is not None, "Failed to store message set"
+            return stored_message_set.id
 
-    def get_message_set(self, message_set_id: str) -> Optional[MessageSet]:
+    def get_message_set(self, message_set_id: int) -> Optional[MessageSet]:
         """
         Retrieve a message set by ID.
 
@@ -639,12 +556,17 @@ class SQLiteBackend:
             The MessageSet object if found, None otherwise
         """
         with Session(self.engine) as session:
-            message_set_table = session.get(MessageSetTable, message_set_id)
+            return session.get(MessageSet, message_set_id)
 
-            if not message_set_table:
-                return None
+    def get_active_message_set_id(self) -> int:
+        message_set = self.get_active_message_set()
+        assert message_set and message_set.id
+        return message_set.id
 
-            return self._table_to_message_set(message_set_table)
+    def get_active_message_ids(self) -> List[int]:
+        message_set = self.get_active_message_set()
+        assert message_set
+        return message_set.message_ids
 
     def get_active_message_set(self) -> Optional[MessageSet]:
         """
@@ -655,9 +577,9 @@ class SQLiteBackend:
         """
         with Session(self.engine) as session:
             statement = (
-                select(MessageSetTable)
-                .where(MessageSetTable.active == True)
-                .order_by(desc(MessageSetTable.created_at))
+                select(MessageSet)
+                .where(MessageSet.active == True)
+                .order_by(desc(MessageSet.created_at))
                 .limit(1)
             )
             results = session.exec(statement).all()
@@ -665,9 +587,9 @@ class SQLiteBackend:
             if not results:
                 return None
 
-            return self._table_to_message_set(results[0])
+            return results[0]
 
-    def get_messages_in_set(self, message_set_id: str) -> List[Message]:
+    def get_messages_in_set(self, message_set_id: int) -> List[AllMessageValues]:
         """
         Retrieve all messages in a message set.
 
@@ -684,9 +606,9 @@ class SQLiteBackend:
         with Session(self.engine) as session:
             messages = []
             for message_id in message_set.message_ids:
-                message_table = session.get(MessageTable, message_id)
-                if message_table:
-                    messages.append(self._table_to_message(message_table))
+                stored_message = session.get(Message, message_id)
+                assert stored_message
+                messages.append(stored_message.data)
 
             return messages
 
@@ -695,81 +617,24 @@ class SQLiteBackend:
         Deactivate all message sets.
         """
         with Session(self.engine) as session:
-            statement = select(MessageSetTable)
-            message_set_tables = session.exec(statement).all()
+            statement = select(MessageSet)
+            stored_message_sets = session.exec(statement).all()
 
-            for message_set_table in message_set_tables:
-                message_set_table.active = False
+            for stored_message_set in stored_message_sets:
+                stored_message_set.active = False
 
             session.commit()
-
-    def get_all_message_sets(self) -> List[MessageSet]:
-        """
-        Retrieve all message sets.
-
-        Returns:
-            List of all MessageSet objects
-        """
-        with Session(self.engine) as session:
-            statement = select(MessageSetTable)
-            message_set_tables = session.exec(statement).all()
-
-            return [
-                self._table_to_message_set(message_set_table)
-                for message_set_table in message_set_tables
-            ]
-
-    def _table_to_message(self, message_table: MessageTable) -> Message:
-        """Convert a SQLModel table object to a Message object."""
-        # Parse metadata JSON
-        metadata = parse_json_field(message_table.meta_data)
-
-        # Create Message object
-        message = Message(
-            id=message_table.id,
-            role=message_table.role,
-            content=message_table.content,
-            created_at=message_table.created_at,
-            metadata=metadata,
-            user_id=message_table.user_id,
-            tool_calls=json.loads(message_table.tool_calls)
-            if message_table.tool_calls
-            else None,
-            tool_call_id=message_table.tool_call_id,
-        )
-
-        return message
-
-    def _table_to_message_set(self, message_set_table: MessageSetTable) -> MessageSet:
-        """Convert a SQLModel table object to a MessageSet object."""
-        # Parse message_ids JSON
-        message_ids = json.loads(message_set_table.message_ids)
-
-        # Parse metadata JSON
-        metadata = parse_json_field(message_set_table.meta_data)
-
-        # Create MessageSet object
-        message_set = MessageSet(
-            id=message_set_table.id,
-            message_ids=message_ids,
-            active=message_set_table.active,
-            created_at=message_set_table.created_at,
-            metadata=metadata,
-            user_id=message_set_table.user_id,
-        )
-
-        return message_set
 
     def _create_default_user(self) -> None:
         """Create the default user if it doesn't exist."""
         with Session(self.engine) as session:
             # Check if default user exists
-            statement = select(UserTable).where(UserTable.token == "default")
+            statement = select(User).where(User.token == "default")
             default_user = session.exec(statement).first()
 
             if not default_user:
                 # Create default user with ID 1
-                default_user = UserTable(id=1, token="default")
+                default_user = User(id=1, token="default")
                 session.add(default_user)
                 session.commit()
 
@@ -785,7 +650,7 @@ class SQLiteBackend:
         """
         with Session(self.engine) as session:
             # Check if user with this token already exists
-            statement = select(UserTable).where(UserTable.token == token)
+            statement = select(User).where(User.token == token)
             existing_user = session.exec(statement).first()
 
             if existing_user:
@@ -793,11 +658,11 @@ class SQLiteBackend:
 
             # Create new user
             # Get the highest existing ID
-            statement = select(UserTable).order_by(desc(UserTable.id)).limit(1)
+            statement = select(User).order_by(desc(User.id)).limit(1)
             highest_user = session.exec(statement).first()
             next_id = 1 if not highest_user else highest_user.id + 1
 
-            new_user = UserTable(id=next_id, token=token)
+            new_user = User(id=next_id, token=token)
             session.add(new_user)
             session.commit()
 
@@ -814,7 +679,7 @@ class SQLiteBackend:
             The user ID if found, None otherwise
         """
         with Session(self.engine) as session:
-            statement = select(UserTable).where(UserTable.token == token)
+            statement = select(User).where(User.token == token)
             user = session.exec(statement).first()
 
             if not user:

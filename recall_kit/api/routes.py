@@ -11,15 +11,16 @@ import logging
 from typing import Any, Dict, List, Optional
 
 from fastapi import Depends, HTTPException
-from litellm import ChatCompletionRequest, ModelResponse  # type: ignore
-
-from ..storage.base import Message, MessageSet  # type: ignore
+from litellm import (  # type: ignore
+    AllMessageValues,
+    ChatCompletionRequest,
+    ModelResponse,
+)
 
 from ..core import RecallKit  # type: ignore
-
-
 from ..processors.memory import MemoryConsolidator
 from ..protocols.base import StorageBackendProtocol
+from ..storage.base import Message, MessageSet  # type: ignore
 
 # Set up logging
 logger = logging.getLogger(__name__)
@@ -68,25 +69,10 @@ async def create_chat_completion(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-async def get_messages(
-    recall_kit: RecallKit = Depends(get_recall_kit),
-) -> List[Message]:
-    """
-    Get all messages.
-
-    Args:
-        recall_kit: The RecallKit instance
-
-    Returns:
-        List of all messages
-    """
-    return recall_kit.get_all_messages()
-
-
 async def get_message(
     message_id: int,
     storage: StorageBackendProtocol = Depends(get_storage),
-) -> Message:
+) -> AllMessageValues:
     """
     Get a message by ID.
 
@@ -102,21 +88,6 @@ async def get_message(
         raise HTTPException(status_code=404, detail=f"Message {message_id} not found")
     else:
         return message
-
-
-async def get_message_sets(
-    storage: StorageBackendProtocol = Depends(get_storage),
-) -> List[MessageSet]:
-    """
-    Get all message sets.
-
-    Args:
-        recall_kit: The RecallKit instance
-
-    Returns:
-        List of all message sets
-    """
-    return storage.get_all_message_sets()
 
 
 async def get_active_message_set(
@@ -135,7 +106,7 @@ async def get_active_message_set(
 
 
 async def get_message_set(
-    message_set_id: str,
+    message_set_id: int,
     storage: StorageBackendProtocol = Depends(get_storage),
 ) -> MessageSet:
     """
@@ -158,9 +129,9 @@ async def get_message_set(
 
 
 async def get_messages_in_set(
-    message_set_id: str,
+    message_set_id: int,
     storage: StorageBackendProtocol = Depends(get_storage),
-) -> List[Message]:
+) -> List[AllMessageValues]:
     """
     Get all messages in a message set.
 

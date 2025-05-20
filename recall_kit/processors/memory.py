@@ -1,7 +1,6 @@
 import json
 from typing import List
 
-from litellm import AllMessageValues
 from pydantic import BaseModel, Field
 
 from ..constants import CONTENT, ROLE, USER
@@ -85,9 +84,7 @@ class MemoryConsolidator:
             consolidated_memory = Memory(
                 text=memory_response.text,
                 title=memory_response.title,
-                parent_ids=parent_ids,
-                metadata={"consolidated": True, "parent_count": len(parent_ids)},
-                embedding=self.embedding(memory_response.text),
+                _parent_ids=json.dumps(parent_ids),
                 user_id=user_id,
                 source_address="TODO_CONSOLIDATED_MEMROY_SOURCE_ADDRESS",
             )
@@ -172,8 +169,6 @@ class MemoryConsolidator:
                 response_format=MemoryResponse,
             )
 
-
-        x = AllMessageValues
         except Exception:
             # If response_format fails, try without it
             response = self.completion(

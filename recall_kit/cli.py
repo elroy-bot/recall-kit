@@ -8,21 +8,16 @@ for creating, searching, and managing memories.
 import json
 import logging
 import sys
-from typing import List, Optional, TextIO
+from typing import List, Optional
 
 import click
 
-from .storage.base import Memory
-
-
-from .core import RecallKit
-from recall_kit.models import user
-from .repository.memory_store import MemoryStore
-from .protocols.base import StorageBackendProtocol
+from recall_kit import __version__
 from recall_kit.storage import SQLiteBackend
 
-from recall_kit.repository import memory_store
-from recall_kit import __version__
+from .core import RecallKit
+from .repository.memory_store import MemoryStore
+from .storage.base import Memory
 
 
 @click.group()
@@ -88,8 +83,8 @@ def remember(
     ctx: click.Context, text: str, title: Optional[str], source: Optional[str]
 ):
     """Create a new memory."""
-    recall: RecallKit = ctx.obj["recall"]
-    memory: Memory = recall.create_memory(
+    memory_store: MemoryStore = ctx.obj["memory_store"]
+    memory: Memory = memory_store.create_memory(
         text=text,
         title=title,
         source_address=source,
@@ -106,7 +101,7 @@ def remember(
 def search(ctx: click.Context, query: str, limit: int, output_json: bool):
     """Search for memories."""
     memory_store: MemoryStore = ctx.obj["memory_store"]
-    results: List[Memory] =  memory_store.search(query, limit=limit)
+    results: List[Memory] = memory_store.search(query, limit=limit)
 
     if output_json:
         # Output as JSON
@@ -156,6 +151,7 @@ def ingest(
     import os
 
     recall: RecallKit = ctx.obj["recall"]
+    memory_store: MemoryStore = ctx.obj["memory_store"]
 
     # Determine files to process
     if os.path.isfile(path):
@@ -185,7 +181,7 @@ def ingest(
 
             # Create a memory for the file
             title = os.path.basename(file_path)
-            memory = recall.create_memory(
+            memory = memory_store.create_memory(
                 text=content,
                 title=title,
                 source_address=f"file:{file_path}",
@@ -199,336 +195,6 @@ def ingest(
             click.echo(f"Error ingesting {file_path}: {str(e)}", err=True)
 
     click.echo(f"Ingested {count} files.")
-
-
-@cli.command()
-@click.option(
-    "--format",
-    "output_format",
-    type=click.Choice(["json", "csv"]),
-    default="json",
-    help="Output format",
-)
-@click.option("--output", type=click.Path(), help="Output file (default: stdout)")
-@click.pass_context
-def export(ctx: click.Context, output_format: str, output: Optional[str]):
-    """Export memories."""
-    recall: RecallKit = ctx.obj["recall"]
-    memories: List[Memory] = recall.storage.get_all_memories()
-
-    # Prepare output file or use stdout
-    output_file: TextIO = open(output, "w", encoding="utf-8") if output else sys.stdout
-
-    try:
-        if output_format == "json":
-            # Export as JSON
-            data = [
-                {
-                    "id": memory.id,
-                    "text": memory.text,
-                    "title": memory.title,
-                    "created_at": memory.created_at.isoformat(),
-                    "source_address": memory.source_address,
-                    "parent_ids": memory.parent_ids,
-                    "metadata": memory.metadata,
-                }
-                for memory in memories
-            ]
-            json.dump(data, output_file, indent=2)
-
-        elif output_format == "csv":
-            # Export as CSV
-            import csv
-
-            writer = csv.writer(output_file)
-            writer.writerow(["id", "title", "text", "created_at", "source_address"])
-
-            for memory in memories:
-                writer.writerow(
-                    [
-                        memory.id,
-                        memory.title,
-                        memory.text,
-                        memory.created_at.isoformat(),
-                        memory.source_address or "",
-                    ]
-                )
-
-    finally:
-        if output:
-            output_file.close()
-
-    if output:
-        click.echo(f"Exported {len(memories)} memories to {output}")
-    else:
-        # If we wrote to stdout, add a newline
-        if memories:
-            click.echo("")
-
-
-@cli.command()
-@click.pass_context
-def stats(ctx: click.Context):
-    """View memory statistics."""
-    recall: RecallKit = ctx.obj["recall"]
-    memories: List[Memory] = recall.storage.get_all_memories()
-
-    # Count total memories
-    total_count = len(memories)
-
-    # Count consolidated memories
-    consolidated_count = sum(1 for m in memories if m.parent_ids)
-
-    # Count source memories
-    source_count = sum(1 for m in memories if m.source_address)
-
-    # Calculate average text length
-    avg_length = sum(len(m.text) for m in memories) / total_count if total_count else 0
-
-    # Output statistics
-    click.echo("Memory Statistics:")
-    click.echo(f"Total memories: {total_count}")
-    click.echo(f"Consolidated memories: {consolidated_count}")
-    click.echo(f"Source-linked memories: {source_count}")
-    click.echo(f"Average text length: {avg_length:.1f} characters")
-
-
-@cli.command()
-@click.option(
-    "--threshold", type=float, default=0.85, help="Similarity threshold (0-1)"
-)
-@click.option("--min-cluster", type=int, default=2, help="Minimum cluster size")
-@click.option("--max-cluster", type=int, default=5, help="Maximum cluster size")
-@click.option(
-    "--model", type=str, default="gpt-4o", help="Model to use for consolidation"
-)
-@click.pass_context
-def consolidate(
-    ctx: click.Context, threshold: float, min_cluster: int, max_cluster: int, model: str
-):
-    """Consolidate similar memories."""
-    recall: RecallKit = ctx.obj["recall"]
-
-    # Consolidate memories
-    consolidated = recall.consolidate_memories(
-        model=model,
-        threshold=threshold,
-        min_cluster_size=min_cluster,
-        max_cluster_size=max_cluster,
-    )
-
-    if consolidated:
-        click.echo(f"Created {len(consolidated)} consolidated memories:")
-        for memory in consolidated:
-            click.echo(f"- {memory.title} (from {len(memory.parent_ids)} memories)")
-    else:
-        click.echo("No memories were consolidated.")
-
-
-@cli.command()
-@click.option("--model", help="LLM model to use for chat")
-@click.pass_context
-def chat(ctx: click.Context, model: str):
-    """Interactive chat with memory and LLM."""
-    from litellm import ModelResponse  # type: ignore
-
-    recall: RecallKit = ctx.obj["recall"]
-    storage: SQLiteBackend = ctx.obj["storage"]
-
-    click.echo("Recall Kit Chat")
-    click.echo(f"Using model: {model}")
-    click.echo("Type 'exit' or 'quit' to end the session")
-    click.echo("Type 'help' for commands")
-
-    # Get or create active message set
-    active_message_set = storage.get_active_message_set()
-
-    # Initialize messages
-    if active_message_set:
-        # Load messages from active message set
-        messages = storage.get_messages_in_set(active_message_set.id)
-        messages_dict = [{"role": msg.role, "content": msg.content} for msg in messages]
-        click.echo(f"Loaded {len(messages)} messages from active conversation")
-    else:
-        # Create a new system message
-        system_message = storage.store_message(
-            Message(
-            role="system",
-            content="You are a helpful assistant with access to the user's memories. "
-            "Respond to the user's questions using relevant memories when available.",
-            metadata={"type": "conversation"},
-            )
-        )
-
-        # Create a new message set with the system message
-        active_message_set = recall.create_message_set(
-            message_ids=[system_message.id],
-            active=True,
-            metadata={"type": "conversation"},
-        )
-
-        messages_dict = [{"role": "system", "content": system_message.content}]
-        click.echo("Created new conversation")
-
-    # Start the chat loop
-    while True:
-        try:
-            user_input: str = input("\nYou: ").strip()
-
-            if user_input.lower() in ("exit", "quit"):
-                break
-
-            if user_input.lower() == "help":
-                click.echo("\nCommands:")
-                click.echo("  exit, quit - End the session")
-                click.echo("  help - Show this help message")
-                click.echo("  remember <text> - Create a new memory")
-                click.echo("  search <query> - Search for memories")
-                click.echo("  clear - Clear the conversation history")
-                click.echo("  history - Show conversation history")
-                click.echo("  messages - Show all messages in the current conversation")
-                continue
-
-            if user_input.lower().startswith("remember "):
-                # Create a memory
-                text: str = user_input[9:].strip()
-                memory: Memory = recall.create_memory(text=text)
-                click.echo(f"Memory created: {memory.id}")
-                continue
-
-            if user_input.lower().startswith("search "):
-                # Search for memories
-                query: str = user_input[7:].strip()
-                results: List[Memory] = recall.search(query, limit=3)
-
-                if not results:
-                    click.echo("No memories found.")
-                else:
-                    click.echo(f"Found {len(results)} memories:")
-                    for i, memory in enumerate(results, 1):
-                        click.echo(
-                            f"{i}. {memory.title} (relevance: {memory.relevance:.2f})"
-                        )
-                        click.echo(f"   {memory.text}")
-                continue
-
-            if user_input.lower() == "clear":
-                # Clear conversation history but keep the system message
-                system_messages = [
-                    msg
-                    for msg in recall.get_messages_in_set(active_message_set.id)
-                    if msg.role == "system"
-                ]
-
-                if system_messages:
-                    # Create a new message set with just the system message
-                    active_message_set = recall.create_message_set(
-                        message_ids=[msg.id for msg in system_messages],
-                        active=True,
-                        metadata={"type": "conversation"},
-                    )
-                    messages_dict = [
-                        {"role": msg.role, "content": msg.content}
-                        for msg in system_messages
-                    ]
-                else:
-                    # Create a new system message
-                    system_message = recall.create_message(
-                        role="system",
-                        content="You are a helpful assistant with access to the user's memories. "
-                        "Respond to the user's questions using relevant memories when available.",
-                        metadata={"type": "conversation"},
-                    )
-
-                    # Create a new message set with the system message
-                    active_message_set = recall.create_message_set(
-                        message_ids=[system_message.id],
-                        active=True,
-                        metadata={"type": "conversation"},
-                    )
-
-                    messages_dict = [
-                        {"role": "system", "content": system_message.content}
-                    ]
-
-                click.echo("Conversation history cleared.")
-                continue
-
-            if user_input.lower() == "history":
-                # Show conversation history
-                messages = recall.get_messages_in_set(active_message_set.id)
-                if not messages:
-                    click.echo("No conversation history.")
-                else:
-                    click.echo("\nConversation history:")
-                    for i, msg in enumerate(messages):
-                        click.echo(f"{i+1}. {msg.role}: {msg.content}")
-                continue
-
-            if user_input.lower() == "messages":
-                # Show all messages in the current conversation
-                messages = storage.get_messages_in_set(active_message_set.id)
-                if not messages:
-                    click.echo("No messages in the current conversation.")
-                else:
-                    click.echo("\nMessages in the current conversation:")
-                    for i, msg in enumerate(messages):
-                        click.echo(f"{i+1}. ID: {msg.id}")
-                        click.echo(f"   Role: {msg.role}")
-                        click.echo(f"   Content: {msg.content}")
-                        click.echo(f"   Created: {msg.created_at}")
-                continue
-
-            # Create a new user message
-            user_message = recall.create_message(
-                role="user", content=user_input, metadata={"type": "conversation"}
-            )
-
-            # Add the user message to the active message set
-            message_ids = active_message_set.message_ids + [user_message.id]
-            active_message_set = recall.create_message_set(
-                message_ids=message_ids, active=True, metadata={"type": "conversation"}
-            )
-
-            # Update the messages dictionary for the completion API
-            messages_dict.append({"role": "user", "content": user_input})
-
-            # Generate response using chat_completion
-            response: ModelResponse = recall.completion(
-                messages=messages_dict,
-                model=model,
-            )
-
-            # Extract assistant's response
-            assistant_content: str = response.choices[0].message.content  # type: ignore
-
-            # Create a new assistant message
-            assistant_message = storage.store_message(
-                Message(
-                role="assistant",
-                content=assistant_content,
-                metadata={"type": "conversation"},
-                tool_call_id=None
-                tool_calls=None,
-                user_id=user.id,
-                )
-            )
-
-            # Add the assistant message to the active message set
-            message_ids = active_message_set.message_ids + [assistant_message.id]
-            active_message_set = recall.create_message_set(
-                message_ids=message_ids, active=True, metadata={"type": "conversation"}
-            )
-
-            # Update the messages dictionary for the next iteration
-            messages_dict.append({"role": "assistant", "content": assistant_content})
-
-            # Display the response
-            click.echo(f"\nAssistant: {assistant_content}")
-
-        except KeyboardInterrupt:
-            click.echo("\nExiting...")
-            break
 
 
 @cli.command()

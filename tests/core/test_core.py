@@ -236,19 +236,19 @@ def test_compress_messages(recall_kit: RecallKit):
 
     # Create a list of messages
     messages = [
-        {"role": "system", "content": "You are a helpful assistant."},
-        {"role": "user", "content": "Hello, how are you?"},
-        {"role": "assistant", "content": "I'm doing well, thank you for asking!"},
-        {"role": "user", "content": "Tell me about the weather."},
-        {"role": "assistant", "content": "I don't have real-time weather information."},
-        {"role": "user", "content": "What about climate change?"},
+        {ROLE: "system", "content": "You are a helpful assistant."},
+        {ROLE: "user", "content": "Hello, how are you?"},
+        {ROLE: "assistant", "content": "I'm doing well, thank you for asking!"},
+        {ROLE: "user", "content": "Tell me about the weather."},
+        {ROLE: "assistant", "content": "I don't have real-time weather information."},
+        {ROLE: "user", "content": "What about climate change?"},
         {
-            "role": "assistant",
+            ROLE: "assistant",
             "content": "Climate change is a significant global issue...",
         },
-        {"role": "user", "content": "And renewable energy?"},
+        {ROLE: "user", "content": "And renewable energy?"},
         {
-            "role": "assistant",
+            ROLE: "assistant",
             "content": "Renewable energy sources include solar, wind...",
         },
     ]
@@ -259,7 +259,7 @@ def test_compress_messages(recall_kit: RecallKit):
     )
 
     # Check that the system message is preserved
-    assert any(msg.get("role") == "system" for msg in compressed)
+    assert any(msg.get(ROLE) == "system" for msg in compressed)
 
     # Check that we have fewer messages than we started with
     # If compression doesn't happen due to token counting differences, skip this test
@@ -288,7 +288,7 @@ def test_compress_messages(recall_kit: RecallKit):
     # Check that a tool message with summary was added after the earliest assistant message
     earliest_assistant_idx = None
     for i, msg in enumerate(compressed):
-        if msg.get("role") == "assistant":
+        if msg.get(ROLE) == "assistant":
             earliest_assistant_idx = i
             break
 
@@ -328,30 +328,30 @@ def test_compress_messages_with_age_limit(recall_kit: RecallKit):
     two_days_ago = now - datetime.timedelta(days=2)
 
     messages = [
-        {"role": "system", "content": "You are a helpful assistant."},
+        {ROLE: "system", "content": "You are a helpful assistant."},
         {
-            "role": "user",
+            ROLE: "user",
             "content": "Old message",
             "created_at": two_days_ago.isoformat(),
         },
         {
-            "role": "assistant",
+            ROLE: "assistant",
             "content": "Old response",
             "created_at": two_days_ago.isoformat(),
         },
         {
-            "role": "user",
+            ROLE: "user",
             "content": "Recent message",
             "created_at": one_day_ago.isoformat(),
         },
         {
-            "role": "assistant",
+            ROLE: "assistant",
             "content": "Recent response",
             "created_at": one_day_ago.isoformat(),
         },
-        {"role": "user", "content": "Latest message", "created_at": now.isoformat()},
+        {ROLE: "user", "content": "Latest message", "created_at": now.isoformat()},
         {
-            "role": "assistant",
+            ROLE: "assistant",
             "content": "Latest response",
             "created_at": now.isoformat(),
         },
@@ -394,10 +394,10 @@ def test_compress_messages_tool_calls(recall_kit: RecallKit):
 
     # Create messages with tool calls
     messages = [
-        {"role": "system", "content": "You are a helpful assistant."},
-        {"role": "user", "content": "What's the weather?"},
+        {ROLE: "system", "content": "You are a helpful assistant."},
+        {ROLE: "user", "content": "What's the weather?"},
         {
-            "role": "assistant",
+            ROLE: "assistant",
             "content": "I'll check the weather for you.",
             "tool_calls": [
                 {
@@ -411,13 +411,13 @@ def test_compress_messages_tool_calls(recall_kit: RecallKit):
             ],
         },
         {
-            "role": "tool",
+            ROLE: "tool",
             "content": "The weather is sunny and 75°F.",
             "tool_call_id": "call_weather_1",
         },
-        {"role": "user", "content": "Thanks! What about tomorrow?"},
+        {ROLE: "user", "content": "Thanks! What about tomorrow?"},
         {
-            "role": "assistant",
+            ROLE: "assistant",
             "content": "I'll check tomorrow's forecast.",
             "tool_calls": [
                 {
@@ -431,7 +431,7 @@ def test_compress_messages_tool_calls(recall_kit: RecallKit):
             ],
         },
         {
-            "role": "tool",
+            ROLE: "tool",
             "content": "Tomorrow will be partly cloudy with a high of 70°F.",
             "tool_call_id": "call_weather_2",
         },
@@ -443,12 +443,12 @@ def test_compress_messages_tool_calls(recall_kit: RecallKit):
     )
 
     # Check that tool messages have tool_call_id
-    tool_messages = [msg for msg in compressed if msg.get("role") == "tool"]
+    tool_messages = [msg for msg in compressed if msg.get(ROLE) == "tool"]
     for msg in tool_messages:
         assert "tool_call_id" in msg
 
     # Check that assistant messages have tool_calls
-    assistant_messages = [msg for msg in compressed if msg.get("role") == "assistant"]
+    assistant_messages = [msg for msg in compressed if msg.get(ROLE) == "assistant"]
     for msg in assistant_messages:
         if "tool_calls" in msg:
             assert len(msg["tool_calls"]) > 0
@@ -482,11 +482,11 @@ def test_compress_messages_with_existing_message_set(recall_kit: RecallKit):
 
     # Create messages to compress
     messages = [
-        {"role": "system", "content": "You are a helpful assistant."},
-        {"role": "user", "content": "Hello, how are you?"},
-        {"role": "assistant", "content": "I'm doing well, thank you for asking!"},
-        {"role": "user", "content": "Tell me about the weather."},
-        {"role": "assistant", "content": "I don't have real-time weather information."},
+        {ROLE: "system", "content": "You are a helpful assistant."},
+        {ROLE: "user", "content": "Hello, how are you?"},
+        {ROLE: "assistant", "content": "I'm doing well, thank you for asking!"},
+        {ROLE: "user", "content": "Tell me about the weather."},
+        {ROLE: "assistant", "content": "I don't have real-time weather information."},
     ]
 
     # Compress messages with the existing message set ID

@@ -131,6 +131,5 @@ class ChatManager:
         self.recall_kit.memory_manager.create_memory(
             text=conversation_text,
             title=query[:50] + "..." if len(query) > 50 else query,
-            metadata={"type": "conversation"},
             user_id=user_id,
         )
