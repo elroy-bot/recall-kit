@@ -1,6 +1,6 @@
 import logging
 import uuid
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Union, Callable
 
 from litellm import ChatCompletionRequest, ModelResponse  # type: ignore
 from litellm import Type
@@ -10,9 +10,27 @@ from ..constants import ASSISTANT, ROLE, TOOL
 from ..protocols.base import CompletionFunction
 
 
-def ensure_corret_tool_messages(request: ChatCompletionRequest):
-    # AI!: Write a placeholder wrapper, specifying that this is a decorator of the completion function
-
+def ensure_corret_tool_messages(completion_func: Callable) -> Callable:
+    """
+    Decorator for completion functions to ensure correct tool message formatting.
+    
+    This decorator wraps a completion function to preprocess the request
+    and ensure that tool messages are properly formatted before being sent
+    to the LLM API.
+    
+    Args:
+        completion_func: The completion function to wrap
+        
+    Returns:
+        Wrapped function that ensures correct tool message formatting
+    """
+    def wrapper(*args, **kwargs):
+        # Process messages if they exist in kwargs
+        if "messages" in kwargs:
+            kwargs["messages"] = process_tool_messages(kwargs["messages"])
+        return completion_func(*args, **kwargs)
+    
+    return wrapper
 
 
 def get_completion(
