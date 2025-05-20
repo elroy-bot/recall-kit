@@ -10,25 +10,23 @@ from ..constants import ASSISTANT, ROLE, TOOL
 from ..protocols.base import CompletionFunction
 
 
-def ensure_corret_tool_messages(completion_func: Callable) -> Callable:
+def ensure_corret_tool_messages(completion_fn: CompletionFunction) -> CompletionFunction:
     """
-    Decorator for completion functions to ensure correct tool message formatting.
+    Decorator for completion functions to ensure correct tool message handling.
     
-    This decorator wraps a completion function to preprocess the request
-    and ensure that tool messages are properly formatted before being sent
-    to the LLM API.
+    This decorator wraps a completion function to preprocess the request and ensure
+    that tool messages are properly formatted according to the API requirements.
     
     Args:
-        completion_func: The completion function to wrap
+        completion_fn: The completion function to wrap
         
     Returns:
-        Wrapped function that ensures correct tool message formatting
+        Wrapped completion function that ensures correct tool message handling
     """
-    def wrapper(*args, **kwargs):
-        # Process messages if they exist in kwargs
+    def wrapper(**kwargs: Any) -> ModelResponse:
         if "messages" in kwargs:
             kwargs["messages"] = process_tool_messages(kwargs["messages"])
-        return completion_func(*args, **kwargs)
+        return completion_fn(**kwargs)
     
     return wrapper
 
