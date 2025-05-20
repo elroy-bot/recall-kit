@@ -81,11 +81,10 @@ class CompletionFunction(Protocol):
 
 @runtime_checkable
 class StorageBackendProtocol(Protocol):
-    # AI! update types to conform with specific BaseModel, ie Message, Memory, MessageSet. Id's can be int.
-    def store_memory(self, memory: Any) -> None:
+    def store_memory(self, memory: Memory) -> None:
         ...
 
-    def get_memory(self, memory_id: str) -> Optional[Any]:
+    def get_memory(self, memory_id: int) -> Optional[Memory]:
         ...
 
     def get_all_memories(self) -> List[Memory]:
@@ -93,7 +92,7 @@ class StorageBackendProtocol(Protocol):
 
     def search_memories(
         self, query_embedding: List[float], limit: int = 5
-    ) -> List[Any]:
+    ) -> List[Memory]:
         ...
 
     def update_memory(self, memory: Memory) -> None:
@@ -105,28 +104,28 @@ class StorageBackendProtocol(Protocol):
     def store_message(self, message: Message) -> None:
         ...
 
-    def get_message(self, message_id: str) -> Optional[Message]:
+    def get_message(self, message_id: int) -> Optional[Message]:
         ...
 
     def get_all_messages(self) -> List[Message]:
         ...
 
-    def store_message_set(self, message_set: Any) -> None:
+    def store_message_set(self, message_set: MessageSet) -> None:
         ...
 
-    def get_message_set(self, message_set_id: str) -> Optional[Any]:
+    def get_message_set(self, message_set_id: int) -> Optional[MessageSet]:
         ...
 
-    def get_active_message_set(self) -> Optional[Any]:
+    def get_active_message_set(self) -> Optional[MessageSet]:
         ...
 
-    def get_messages_in_set(self, message_set_id: str) -> List[Any]:
+    def get_messages_in_set(self, message_set_id: int) -> List[Message]:
         ...
 
     def deactivate_all_message_sets(self) -> None:
         ...
 
-    def get_all_message_sets(self) -> List[Any]:
+    def get_all_message_sets(self) -> List[MessageSet]:
         ...
 
     def create_user(self, token: str) -> int:
