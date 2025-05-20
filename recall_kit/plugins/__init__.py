@@ -28,7 +28,6 @@ from .registry import _check_protocol_conformance, registry
 # Import from default module
 
 
-
 # Re-export convenience functions that use the global registry
 
 

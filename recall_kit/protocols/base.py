@@ -31,7 +31,9 @@ class RetrieveFunction(Protocol):
 @runtime_checkable
 class FilterFunction(Protocol):
     def __call__(
-        self, memories: List[Memory], request: ChatCompletionRequest
+        self,
+        request: ChatCompletionRequest,
+        memories: List[Memory],
     ) -> List[Memory]:
         ...
 
@@ -39,7 +41,9 @@ class FilterFunction(Protocol):
 @runtime_checkable
 class RerankFunction(Protocol):
     def __call__(
-        self, memories: List[Memory], request: ChatCompletionRequest
+        self,
+        request: ChatCompletionRequest,
+        memories: List[Memory],
     ) -> List[Memory]:
         ...
 
@@ -47,7 +51,9 @@ class RerankFunction(Protocol):
 @runtime_checkable
 class AugmentFunction(Protocol):
     def __call__(
-        self, memories: List[Memory], request: ChatCompletionRequest
+        self,
+        request: ChatCompletionRequest,
+        memories: List[Memory],
     ) -> ChatCompletionRequest:
         ...
 

@@ -15,6 +15,9 @@ from pydantic import BaseModel, Field
 
 from recall_kit import RecallKit
 
+from ..processors.memory import MemoryConsolidator
+from ..protocols.base import StorageBackendProtocol
+
 # Set up logging
 logger = logging.getLogger(__name__)
 
@@ -109,6 +112,7 @@ def get_recall_kit() -> RecallKit:
 async def create_chat_completion(
     request: ChatCompletionRequest,
     recall_kit: RecallKit = Depends(get_recall_kit),
+    memory_consolidator: MemoryConsolidator = Depends(get_memory_consolidator),
 ) -> ChatCompletionResponse:
     """
     Create a chat completion with memory augmentation.
@@ -145,7 +149,7 @@ async def create_chat_completion(
 
         # Always perform auto-consolidation after each chat completion
         # Use LLM-driven consolidation
-        recall_kit.consolidate_memories(model=request.model)
+        memory_consolidator.consolidate_memories(model=request.model)
 
         # Convert the litellm response to our response format
         return ChatCompletionResponse(
@@ -339,6 +343,7 @@ async def get_message_set(
 async def get_messages_in_set(
     message_set_id: str,
     recall_kit: RecallKit = Depends(get_recall_kit),
+    storage: StorageBackendProtocol = Depends(get_storage),
 ) -> List[MessageResponse]:
     """
     Get all messages in a message set.

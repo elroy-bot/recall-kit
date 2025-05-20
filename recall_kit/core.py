@@ -5,20 +5,20 @@ This module contains the main classes and functions for working with memories,
 including the RecallKit class.
 """
 
+
 from __future__ import annotations
 
 import datetime
 import json
+from functools import partial
 from typing import Any, Dict, List, Optional, TypeVar
 
-from litellm import ModelResponse, Type  # type: ignore
-from pydantic import BaseModel, Field
+from litellm import ChatCompletionRequest, Type  # type: ignore
+from toolz import pipe
 
-from recall_kit.managers import ChatManager, MemoryManager, MessageManager
 from recall_kit.models import Memory, Message, MessageSet
 
-from .constants import CONTENT, ROLE, USER
-from .processors.chat_completions import get_completion
+from .constants import ASSISTANT, CONTENT, ROLE, TOOL, USER
 
 # Type variable for the RecallKit class
 T = TypeVar("T", bound="RecallKit")
@@ -72,18 +72,13 @@ class RecallKit:
 
         # Set up embedding and completion functions
         self.embedding_fn = embedding_fn
-        self.completion_fn = completion_fn
+        self.completion = completion_fn
 
         # Set up custom functions
         self.retrieve_fn = retrieve_fn
         self.filter_fn = filter_fn
         self.rerank_fn = rerank_fn
         self.augment_fn = augment_fn
-
-        # Initialize managers
-        self.memory_manager = MemoryManager(self)
-        self.message_manager = MessageManager(self)
-        self.chat_manager = ChatManager(self)
 
     @classmethod
     def create(
@@ -125,102 +120,7 @@ class RecallKit:
             augment_fn=augment_fn or registry.get_augment_fn("default"),
         )
 
-    # Memory-related methods delegated to MemoryManager
-    def create_memory(
-        self,
-        text: str,
-        title: Optional[str] = None,
-        source_address: Optional[str] = None,
-        metadata: Optional[Dict[str, Any]] = None,
-        user_id: Optional[int] = None,
-    ) -> Memory:
-        """
-        Create a new memory from text.
-
-        Args:
-            text: The text content of the memory
-            title: A title for the memory (auto-generated if not provided)
-            source_address: Address of the source (optional)
-            metadata: Additional metadata about the memory
-            user_id: ID of the user who owns this memory (defaults to default user if not provided)
-
-        Returns:
-            The created Memory object
-        """
-        return self.memory_manager.create_memory(
-            text, title, source_address, metadata, user_id
-        )
-
-    def add_memory(self, memory: Memory) -> Memory:
-        """
-        Add an existing memory to storage.
-
-        Args:
-            memory: The Memory object to store
-
-        Returns:
-            The stored Memory object
-        """
-        return self.memory_manager.add_memory(memory)
-
-    def search(self, query: str, limit: int = 5) -> List[Memory]:
-        """
-        Search for memories relevant to a query.
-
-        Args:
-            query: The search query
-            limit: Maximum number of results to return
-
-        Returns:
-            List of relevant Memory objects
-        """
-        return self.memory_manager.search(query, limit)
-
-    def find_similar_memories(
-        self,
-        threshold: float = 0.85,
-        min_cluster_size: int = 2,
-        max_cluster_size: int = 5,
-    ) -> List[List[Memory]]:
-        """
-        Find clusters of similar memories.
-
-        Args:
-            threshold: Similarity threshold for clustering (0-1)
-            min_cluster_size: Minimum number of memories to form a cluster
-            max_cluster_size: Maximum number of memories to include in a cluster
-
-        Returns:
-            List of memory clusters, where each cluster is a list of Memory objects
-        """
-        return self.memory_manager.find_similar_memories(
-            threshold, min_cluster_size, max_cluster_size
-        )
-
-    def consolidate_memories(
-        self,
-        model: str,
-        threshold: float = 0.85,
-        min_cluster_size: int = 2,
-        max_cluster_size: int = 5,
-    ) -> List[Memory]:
-        """
-        Consolidate similar memories to create higher-level memories.
-
-        Args:
-            model: The model to use for generating consolidated memories
-            threshold: Similarity threshold for clustering (0-1)
-            min_cluster_size: Minimum number of memories to form a cluster
-            max_cluster_size: Maximum number of memories to include in a cluster
-
-        Returns:
-            List of newly created consolidated memories
-        """
-        return self.memory_manager.consolidate_memories(
-            model, threshold, min_cluster_size, max_cluster_size
-        )
-
-    def get_relevant_memories(self, request: Dict[str, Any]) -> List[Memory]:
+    def get_relevant_memories(self, request: ChatCompletionRequest) -> List[Memory]:
         """
         Retrieve relevant memories based on the request.
 
@@ -230,10 +130,18 @@ class RecallKit:
         Returns:
             List of relevant Memory objects
         """
-        return self.memory_manager.get_relevant_memories(request)
+        # Extract the query from the last user message
+        return pipe(
+            request.get("messages", []),
+            partial(self.retrieve_fn, self.storage, self.embedding_fn),
+            partial(self.filter_fn, request),
+            partial(self.rerank_fn, request),
+            list,
+        )  # type: ignore
 
-    # Chat-related methods delegated to ChatManager
-    def augment_chat_request(self, request: Dict[str, Any]) -> Dict[str, Any]:
+    def augment_chat_request(
+        self, request: ChatCompletionRequest
+    ) -> ChatCompletionRequest:
         """
         Process a chat completion request with memory augmentation.
 
@@ -243,48 +151,12 @@ class RecallKit:
         Returns:
             Augmented chat completion request
         """
-        return self.chat_manager.augment_chat_request(request)
+        # Extract the query from the last user message
+        memories = self.get_relevant_memories(request)
+        # Augment the request with memories
+        augmented_request = self.augment_fn(request, memories)
 
-    def completion(self, **kwargs: Any) -> ModelResponse:
-        """
-        Generate an OpenAI compatible chat completion with memory augmentation.
-
-        Args:
-            **kwargs: Arguments to pass to the chat completion API
-                user: Optional[str] - A unique identifier representing the end-user
-
-        Returns:
-            Chat completion response
-        """
-        return self.chat_manager.completion(**kwargs)
-
-    # Message-related methods delegated to MessageManager
-    def create_message(
-        self,
-        role: str,
-        content: str,
-        metadata: Optional[Dict[str, Any]] = None,
-        user_id: Optional[int] = None,
-        tool_call_id: Optional[str] = None,
-        tool_calls: Optional[List[Dict[str, Any]]] = None,
-    ) -> Message:
-        """
-        Create a new message.
-
-        Args:
-            role: The role of the message sender (system, user, assistant, tool)
-            content: The content of the message
-            metadata: Additional metadata about the message
-            user_id: ID of the user who owns this message (defaults to default user if not provided)
-            tool_call_id: ID of the tool call this message is responding to (for tool messages)
-            tool_calls: Tool calls made by this message (for assistant messages)
-
-        Returns:
-            The created Message object
-        """
-        return self.message_manager.create_message(
-            role, content, metadata, user_id, tool_call_id, tool_calls
-        )
+        return augmented_request
 
     def get_message(self, message_id: str) -> Optional[Message]:
         """
@@ -296,7 +168,7 @@ class RecallKit:
         Returns:
             The Message object if found, None otherwise
         """
-        return self.message_manager.get_message(message_id)
+        return self.storage.get_message(message_id)
 
     def get_all_messages(self) -> List[Message]:
         """
@@ -305,7 +177,7 @@ class RecallKit:
         Returns:
             List of all Message objects
         """
-        return self.message_manager.get_all_messages()
+        return self.storage.get_all_messages()
 
     def create_message_set(
         self,
@@ -326,9 +198,27 @@ class RecallKit:
         Returns:
             The created MessageSet object
         """
-        return self.message_manager.create_message_set(
-            message_ids, active, metadata, user_id
+        # If this is an active message set, deactivate all other message sets
+        if active:
+            self.storage.deactivate_all_message_sets()
+
+        # Get default user_id if not provided
+        if user_id is None:
+            user_id = self.storage.get_default_user_id()
+
+        assert isinstance(user_id, int), "user_id must be an integer"
+
+        message_set = MessageSet(
+            message_ids=message_ids,
+            active=active,
+            metadata=metadata or {},
+            user_id=user_id,
         )
+
+        # Store the message set
+        self.storage.store_message_set(message_set)
+
+        return message_set
 
     def get_message_set(self, message_set_id: str) -> Optional[MessageSet]:
         """
@@ -340,7 +230,7 @@ class RecallKit:
         Returns:
             The MessageSet object if found, None otherwise
         """
-        return self.message_manager.get_message_set(message_set_id)
+        return self.storage.get_message_set(message_set_id)
 
     def get_active_message_set(self) -> Optional[MessageSet]:
         """
@@ -349,7 +239,7 @@ class RecallKit:
         Returns:
             The active MessageSet object if found, None otherwise
         """
-        return self.message_manager.get_active_message_set()
+        return self.storage.get_active_message_set()
 
     def get_messages_in_set(self, message_set_id: str) -> List[Message]:
         """
@@ -361,13 +251,13 @@ class RecallKit:
         Returns:
             List of Message objects in the message set
         """
-        return self.message_manager.get_messages_in_set(message_set_id)
+        return self.storage.get_messages_in_set(message_set_id)
 
     def deactivate_all_message_sets(self) -> None:
         """
         Deactivate all message sets.
         """
-        self.message_manager.deactivate_all_message_sets()
+        self.storage.deactivate_all_message_sets()
 
     def store_conversation(
         self,
@@ -386,7 +276,155 @@ class RecallKit:
         Returns:
             The created MessageSet object
         """
-        return self.message_manager.store_conversation(messages, response, user_id)
+        # Get the active message set
+        active_message_set = self.get_active_message_set()
+
+        # If there's only one user message and an active message set, add to it
+        if len(messages) == 1 and messages[0].get(ROLE) == USER and active_message_set:
+            # Create a new message for the user input
+            user_message = self.create_message(
+                role=USER,
+                content=messages[0].get(CONTENT, ""),
+                metadata={"type": "conversation"},
+                user_id=user_id,
+            )
+
+            # Create a new message for the assistant response
+            # Handle both object-style and dict-style responses
+            if hasattr(response, "choices"):
+                assistant_content = response.choices[0].message.content
+            elif isinstance(response, dict) and "choices" in response:
+                choice = response["choices"][0]
+                if isinstance(choice, dict) and "message" in choice:
+                    assistant_content = choice["message"].get(CONTENT, "")
+                else:
+                    return active_message_set
+            else:
+                return active_message_set
+
+            assistant_message = self.create_message(
+                role=ASSISTANT,
+                content=assistant_content,
+                metadata={"type": "conversation"},
+                user_id=user_id,
+            )
+
+            # Update the message set with the new messages
+            message_ids = active_message_set.message_ids + [
+                user_message.id,
+                assistant_message.id,
+            ]
+
+            # Create a new message set with the updated message IDs
+            return self.create_message_set(
+                message_ids=message_ids,
+                active=True,
+                metadata={"type": "conversation"},
+                user_id=user_id,
+            )
+        else:
+            # Create new messages for each message in the conversation
+            message_ids = []
+
+            # If there's an active message set, check for duplicate messages
+            existing_messages = []
+            if active_message_set:
+                existing_messages = self.get_messages_in_set(active_message_set.id)
+
+            # Process each message
+            for i, msg in enumerate(messages):
+                role = msg.get(ROLE, "")
+                content = msg.get(CONTENT, "")
+                tool_call_id = msg.get("tool_call_id")
+                tool_calls = msg.get("tool_calls")
+
+                # Check if this message already exists in the active message set
+                duplicate = False
+                for existing_msg in existing_messages:
+                    if existing_msg.role == role and existing_msg.content == content:
+                        message_ids.append(existing_msg.id)
+                        duplicate = True
+                        break
+
+                # If not a duplicate, create a new message
+                if not duplicate:
+                    # Handle tool messages properly
+                    if (
+                        role == TOOL
+                        and i > 0
+                        and messages[i - 1].get(ROLE) == ASSISTANT
+                    ):
+                        # If tool_call_id is not provided, generate one
+                        if not tool_call_id:
+                            import uuid
+
+                            # Use a shorter prefix to ensure ID is under 40 characters
+                            tool_call_id = f"c_{str(uuid.uuid4())}"
+
+                        message = self.create_message(
+                            role=role,
+                            content=content,
+                            metadata={"type": "conversation"},
+                            user_id=user_id,
+                            tool_call_id=tool_call_id,
+                        )
+                    elif role == ASSISTANT and tool_calls:
+                        message = self.create_message(
+                            role=role,
+                            content=content,
+                            metadata={"type": "conversation"},
+                            user_id=user_id,
+                            tool_calls=json.loads(tool_calls),
+                        )
+                    else:
+                        message = self.create_message(
+                            role=role,
+                            content=content,
+                            metadata={"type": "conversation"},
+                            user_id=user_id,
+                        )
+                    message_ids.append(message.id)
+
+            # Create a message for the assistant response
+            # Handle both object-style and dict-style responses
+            if hasattr(response, "choices"):
+                assistant_content = response.choices[0].message.content
+            elif isinstance(response, dict) and "choices" in response:
+                choice = response["choices"][0]
+                if isinstance(choice, dict) and "message" in choice:
+                    assistant_content = choice["message"].get(CONTENT, "")
+                else:
+                    # Skip adding assistant message if we can't extract content
+                    return self.create_message_set(
+                        message_ids=message_ids,
+                        active=True,
+                        metadata={"type": "conversation"},
+                        user_id=user_id,
+                    )
+            else:
+                # Skip adding assistant message if response format is unexpected
+                return self.create_message_set(
+                    message_ids=message_ids,
+                    active=True,
+                    metadata={"type": "conversation"},
+                    user_id=user_id,
+                )
+
+            assistant_message = self.create_message(
+                role=ASSISTANT,
+                content=assistant_content,
+                metadata={"type": "conversation"},
+                user_id=user_id,
+            )
+            message_ids.append(assistant_message.id)
+
+            # Create a new message set with the messages
+            return self.create_message_set(
+                message_ids=message_ids,
+                active=True,
+                metadata={"type": "conversation"},
+                user_id=user_id,
+            )
 
     def compress_messages(
         self,
@@ -411,84 +449,190 @@ class RecallKit:
         Returns:
            Compressed messages
         """
-        return self.message_manager.compress_messages(
-            model, messages, target_token_count, max_message_age
-        )
+        import datetime
+        from collections import deque
 
-    # Internal methods that need to remain in the RecallKit class
-    class MemoryResponse(BaseModel):
-        """Response format for memory consolidation."""
+        from litellm import token_counter  # type: ignore
 
-        text: str = Field(..., description="The text content of the memory")
-        title: str = Field(
-            ..., description="A title or brief description of the memory"
-        )
+        from recall_kit.constants import ASSISTANT, SYSTEM
 
-    def _generate_consolidated_memory(
-        self, model: str, memories: List[Memory]
-    ) -> MemoryResponse:
-        """
-        Generate text and title for a consolidated memory using LLM.
+        if not messages:
+            return []
 
-        Args:
-            model: The model to use for generating the consolidated memory
-            memories: List of memories to consolidate
+        # Find system message if it exists
+        system_messages = [msg for msg in messages if msg.get(ROLE) == SYSTEM]
+        non_system_messages = [msg for msg in messages if msg.get(ROLE) != SYSTEM]
 
-        Returns:
-            MemoryResponse with text and title for the consolidated memory
-        """
-        # Prepare the memories as context
-        memory_texts = [
-            f"Memory {i+1}: {memory.text}" for i, memory in enumerate(memories)
-        ]
-        memory_context = "\n".join(memory_texts)
-
-        # Create the prompt
-        prompt = f"""
-        You are tasked with consolidating multiple related memories into a single coherent memory.
-
-        Here are the memories to consolidate:
-        {memory_context}
-
-        Please create a consolidated memory that captures the key information from all these memories.
-        Provide both a concise title and a comprehensive text that summarizes the information.
-        """
-
-        # Call the LLM to generate the consolidated memory
-        messages = [{ROLE: USER, CONTENT: prompt}]
-
-        try:
-            # Try with response_format parameter (for OpenAI-compatible APIs)
-            response = get_completion(
-                self.completion_fn,
-                model=model,
-                messages=messages,
-                response_format=self.MemoryResponse,
+        # If no system message, we'll just work with all messages
+        if system_messages:
+            system_message = system_messages[0]
+            current_token_count = token_counter(
+                model=model, text=system_message.get(CONTENT, "")
             )
-
-        except Exception:
-            # If response_format fails, try without it
-            response = get_completion(
-                self.completion_fn,
-                model=model,
-                messages=[
-                    {
-                        ROLE: USER,
-                        CONTENT: prompt
-                        + "\n\nRespond with a JSON object containing 'text' and 'title' fields.",
-                    }
-                ],
-            )
-
-        # Extract the response content
-        if hasattr(response, "choices") and len(response.choices) > 0:
-            content = response.choices[0].message.content  # type: ignore
-        elif isinstance(response, dict) and "choices" in response:
-            content = response["choices"][0]["message"][CONTENT]
         else:
-            raise ValueError("Invalid response format from completion function")
+            system_message = None
+            current_token_count = 0
 
-        # Parse the JSON response
-        assert isinstance(content, str), "Response content should be a string"
-        memory_data = json.loads(content)
-        return self.MemoryResponse(**memory_data)
+        kept_messages = deque()
+        dropped_messages = []
+
+        # Process messages in reverse order (newest first)
+        for msg in reversed(non_system_messages):
+            msg_content = msg.get(CONTENT, "")
+            msg_role = msg.get(ROLE, "")
+
+            # Calculate tokens for this message
+            msg_token_count = token_counter(model=model, text=msg_content)
+
+            # Check if we need to keep this message due to tool calls
+            if (
+                len(kept_messages) > 0
+                and kept_messages[0].get(ROLE) == TOOL
+                and msg_role == ASSISTANT
+            ):
+                # If the last message kept was a tool call, we must keep the corresponding assistant message
+                kept_messages.appendleft(msg)
+                current_token_count += msg_token_count
+                continue
+
+            # Check if we've exceeded our token budget
+            if current_token_count + msg_token_count > target_token_count:
+                # This message would put us over the limit
+                dropped_messages.append(msg)
+                continue
+
+            # Check if the message is too old (if we have a max age)
+            if max_message_age and "created_at" in msg:
+                msg_created_at = msg.get("created_at")
+                if isinstance(msg_created_at, str):
+                    msg_created_at = datetime.datetime.fromisoformat(msg_created_at)
+
+                if (
+                    msg_created_at
+                    and msg_created_at < datetime.datetime.now() - max_message_age
+                ):
+                    dropped_messages.append(msg)
+                    continue
+
+            # If we get here, keep the message
+            kept_messages.appendleft(msg)
+            current_token_count += msg_token_count
+
+        # Create memories from dropped messages
+        if dropped_messages:
+            # Create a consolidated memory from the dropped messages
+            dropped_text = "\n".join(
+                [
+                    f"{msg.get('role', 'unknown').upper()}: {msg.get('content', '')}"
+                    for msg in dropped_messages
+                ]
+            )
+
+            # Create a memory from the dropped messages
+            memory = self.create_memory(
+                text=dropped_text,
+                title=f"Compressed messages from conversation",
+                metadata={"compressed": True, "message_count": len(dropped_messages)},
+            )
+
+            # Find the earliest kept assistant message to append the summary
+            earliest_assistant_msg = None
+            for msg in kept_messages:
+                if msg.get(ROLE) == ASSISTANT:
+                    earliest_assistant_msg = msg
+                    break
+
+            # If we found an assistant message, add a tool call and insert a tool results message
+            if earliest_assistant_msg:
+                # Create a new tool message with the summary
+                summary_content = f"[Context: {len(dropped_messages)} earlier messages were summarized: {memory.title}]"
+
+                # Create a tool message to insert after the earliest assistant message
+                import uuid
+
+                # Use a shorter prefix to ensure ID is under 40 characters
+                tool_call_id = f"c_{str(uuid.uuid4())}"
+
+                # Add tool_calls to the assistant message
+                if "tool_calls" not in earliest_assistant_msg:
+                    earliest_assistant_msg["tool_calls"] = [
+                        {
+                            "id": tool_call_id,
+                            "type": "function",
+                            "function": {"name": "get_summary", "arguments": "{}"},
+                        }
+                    ]
+
+                tool_message = {
+                    "role": TOOL,
+                    CONTENT: summary_content,
+                    "metadata": {"type": "summary", "memory_id": memory.id},
+                    "tool_call_id": tool_call_id,
+                }
+
+                # Find the index of the earliest assistant message
+                earliest_assistant_idx = None
+                for i, msg in enumerate(kept_messages):
+                    if msg is earliest_assistant_msg:
+                        earliest_assistant_idx = i
+                        break
+
+                # Insert the tool message after the earliest assistant message
+                if earliest_assistant_idx is not None:
+                    kept_messages.insert(earliest_assistant_idx + 1, tool_message)
+
+        # Construct the final message list
+        result = list(kept_messages)
+        if system_message:
+            result.insert(0, system_message)
+
+        # Create a new message set with the kept messages and mark the old one inactive
+        if result:
+            # Store the messages in the database
+            message_objects = []
+            for i, msg in enumerate(result):
+                role = msg.get(ROLE, "")
+                tool_call_id = msg.get("tool_call_id")
+                tool_calls = msg.get("tool_calls")
+
+                # Create message with appropriate parameters based on role
+                if role == TOOL and tool_call_id:
+                    message = self.create_message(
+                        role=role,
+                        content=msg.get(CONTENT, ""),
+                        metadata=msg.get("metadata", {}),
+                        tool_call_id=tool_call_id,
+                    )
+                elif role == ASSISTANT and tool_calls:
+                    message = self.create_message(
+                        role=role,
+                        content=msg.get(CONTENT, ""),
+                        metadata=msg.get("metadata", {}),
+                        tool_calls=tool_calls,
+                    )
+                else:
+                    message = self.create_message(
+                        role=role,
+                        content=msg.get(CONTENT, ""),
+                        metadata=msg.get("metadata", {}),
+                    )
+                message_objects.append(message)
+
+            # Create a new message set
+            message_ids = [msg.id for msg in message_objects]
+
+            # If we have an existing message set, mark it inactive
+            old_message_set = self.get_active_message_set()
+
+            if old_message_set:
+                old_message_set.active = False
+                self.storage.store_message_set(old_message_set)
+
+            # Create a new active message set
+            self.create_message_set(
+                message_ids=message_ids,
+                active=True,
+                metadata={"compressed": True},
+            )
+
+        return result

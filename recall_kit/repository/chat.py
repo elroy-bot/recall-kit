@@ -31,23 +31,6 @@ class ChatManager:
         self.completion_fn = recall_kit.completion_fn
         self.augment_fn = recall_kit.augment_fn
 
-    def augment_chat_request(self, request: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Process a chat completion request with memory augmentation.
-
-        Args:
-            request: The chat completion request
-
-        Returns:
-            Augmented chat completion request
-        """
-        # Extract the query from the last user message
-        memories = self.recall_kit.memory_manager.get_relevant_memories(request)
-        # Augment the request with memories
-        augmented_request = self.augment_fn(memories, request)
-
-        return augmented_request
-
     def completion(self, **kwargs: Any) -> ModelResponse:
         """
         Generate an OpenAI compatible chat completion with memory augmentation.
