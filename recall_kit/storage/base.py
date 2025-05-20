@@ -13,6 +13,7 @@ import logging
 import uuid
 from typing import Any, Optional
 
+from litellm import AllMessageValues
 from sqlalchemy import Column, LargeBinary
 from sqlmodel import Field, SQLModel
 
@@ -21,22 +22,18 @@ logger = logging.getLogger(__name__)
 
 
 # SQLModel classes for database tables
-class UserTable(SQLModel, table=True):
+class User(SQLModel, table=True):
     """SQLModel for the users table."""
 
-    __tablename__ = "users"  # type: ignore
-
-    id: int = Field(primary_key=True, default=None)
+    id: Optional[int] = Field(default=None, primary_key=True)
     token: str = Field(unique=True)
     created_at: datetime.datetime = Field(default_factory=datetime.datetime.now)
 
 
-class MemoryTable(SQLModel, table=True):
+class Memory(SQLModel, table=True):
     """SQLModel for the memories table."""
 
-    __tablename__ = "memories"  # type: ignore
-
-    id: str = Field(primary_key=True)
+    id: Optional[int] = Field(default=None, primary_key=True)
     text: str
     title: str
     source_address: Optional[str] = None
@@ -47,12 +44,10 @@ class MemoryTable(SQLModel, table=True):
     user_id: int
 
 
-class EmbeddingTable(SQLModel, table=True):
+class Embedding(SQLModel, table=True):
     """SQLModel for the embeddings table."""
 
-    __tablename__ = "embeddings"  # type: ignore
-
-    id: str = Field(primary_key=True, default_factory=lambda: str(uuid.uuid4()))
+    id: Optional[int] = Field(default=None, primary_key=True)
     source_table: str  # The table name that this embedding is for
     source_id: str  # The ID of the record in the source table
     embedding: bytes = Field(sa_column=Column(LargeBinary))
@@ -61,31 +56,24 @@ class EmbeddingTable(SQLModel, table=True):
     meta_data: Optional[str] = None  # JSON string of metadata
 
 
-class MessageTable(SQLModel, table=True):
-    """SQLModel for the messages table."""
-
-    __tablename__ = "messages"  # type: ignore
-
-    id: str = Field(primary_key=True)
-    role: str
-    content: str
+class Message(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
     created_at: datetime.datetime = Field(default_factory=datetime.datetime.now)
-    meta_data: Optional[str] = None  # JSON string of metadata
-    user_id: int
-    tool_call_id: Optional[
-        str
-    ] = None  # ID of the tool call associated with this message
-    tool_calls: Optional[
-        str
-    ] = None  # JSON string of tool calls associated with this message
+    text: str = Field(default="")
+
+    def set_message_value(self, message_values: AllMessageValues) -> None:
+        """Serialize AllMessageValues to the text column"""
+        self.text = json.dumps(message_values)
+
+    def get_message_value(self) -> AllMessageValues:
+        """Deserialize text column to AllMessageValues"""
+        return json.loads(self.text)
 
 
-class MessageSetTable(SQLModel, table=True):
+class MessageSet(SQLModel, table=True):
     """SQLModel for the message_sets table."""
 
-    __tablename__ = "message_sets"  # type: ignore
-
-    id: str = Field(primary_key=True)
+    id: Optional[int] = Field(default=None, primary_key=True)
     message_ids: str  # JSON string of message IDs
     active: bool = Field(default=True)
     created_at: datetime.datetime = Field(default_factory=datetime.datetime.now)

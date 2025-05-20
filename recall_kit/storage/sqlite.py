@@ -330,7 +330,7 @@ class SQLiteBackend:
             finally:
                 conn.close()
 
-    def get_memory(self, memory_id: str) -> Optional[Memory]:
+    def get_memory(self, memory_id: int) -> Optional[Memory]:
         """
         Retrieve a memory by ID.
 
@@ -435,7 +435,7 @@ class SQLiteBackend:
         # This is essentially the same as store_memory, since we're using merge
         self.store_memory(memory)
 
-    def delete_memory(self, memory_id: str) -> bool:
+    def delete_memory(self, memory_id: int) -> bool:
         """
         Delete a memory by ID.
 
@@ -562,7 +562,7 @@ class SQLiteBackend:
             session.merge(message_table)
             session.commit()
 
-    def get_message(self, message_id: str) -> Optional[Message]:
+    def get_message(self, message_id: int) -> Optional[Message]:
         """
         Retrieve a message by ID.
 

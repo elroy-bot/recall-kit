@@ -13,9 +13,11 @@ from typing import Any, Dict, List, Optional
 from fastapi import Depends, HTTPException
 from litellm import ChatCompletionRequest, ModelResponse  # type: ignore
 
-from recall_kit import RecallKit
+from ..storage.base import Message, MessageSet  # type: ignore
 
-from ..models.message import Message, MessageSet
+from ..core import RecallKit  # type: ignore
+
+
 from ..processors.memory import MemoryConsolidator
 from ..protocols.base import StorageBackendProtocol
 
@@ -30,6 +32,7 @@ def get_recall_kit() -> RecallKit:
 
 def get_memory_consolidator() -> MemoryConsolidator:
     raise NotImplementedError("Should be implemented in the main app")
+
 
 def get_storage() -> StorageBackendProtocol:
     """Get the storage backend."""
@@ -79,9 +82,10 @@ async def get_messages(
     """
     return recall_kit.get_all_messages()
 
+
 async def get_message(
-    message_id: str,
-    recall_kit: RecallKit = Depends(get_recall_kit),
+    message_id: int,
+    storage: StorageBackendProtocol = Depends(get_storage),
 ) -> Message:
     """
     Get a message by ID.
@@ -93,11 +97,9 @@ async def get_message(
     Returns:
         The message
     """
-    message = recall_kit.get_message(message_id)
+    message = storage.get_message(message_id)
     if not message:
-        raise HTTPException(
-            status_code=404, detail=f"Message {message_id} not found"
-        )
+        raise HTTPException(status_code=404, detail=f"Message {message_id} not found")
     else:
         return message
 
@@ -117,8 +119,6 @@ async def get_message_sets(
     return storage.get_all_message_sets()
 
 
-
-
 async def get_active_message_set(
     storage: StorageBackendProtocol = Depends(get_storage),
 ) -> Optional[MessageSet]:
@@ -133,8 +133,9 @@ async def get_active_message_set(
     """
     return storage.get_active_message_set()
 
+
 async def get_message_set(
-    message_set_id: int,
+    message_set_id: str,
     storage: StorageBackendProtocol = Depends(get_storage),
 ) -> MessageSet:
     """
@@ -147,7 +148,7 @@ async def get_message_set(
     Returns:
         The message set
     """
-    message_set =  storage.get_message_set(message_set_id)
+    message_set = storage.get_message_set(message_set_id)
     if not message_set:
         raise HTTPException(
             status_code=404, detail=f"Message set {message_set_id} not found"
@@ -155,8 +156,9 @@ async def get_message_set(
     else:
         return message_set
 
+
 async def get_messages_in_set(
-    message_set_id: int,
+    message_set_id: str,
     storage: StorageBackendProtocol = Depends(get_storage),
 ) -> List[Message]:
     """
@@ -169,14 +171,12 @@ async def get_messages_in_set(
     Returns:
         List of messages in the message set
     """
-    try:
-        messages = storage.get_messages_in_set(message_set_id)
-        if not messages:
-            raise HTTPException(
-                status_code=404, detail=f"Message set {message_set_id} not found"
-            )
-        return messages
-
+    messages = storage.get_messages_in_set(message_set_id)
+    if not messages:
+        raise HTTPException(
+            status_code=404, detail=f"Message set {message_set_id} not found"
+        )
+    return messages
 
 
 async def list_models() -> Dict[str, Any]:

@@ -12,8 +12,17 @@ from typing import List, Optional, TextIO
 
 import click
 
-from recall_kit import Memory, RecallKit, __version__
+from .storage.base import Memory
+
+
+from .core import RecallKit
+from recall_kit.models import user
+from .repository.memory_store import MemoryStore
+from .protocols.base import StorageBackendProtocol
 from recall_kit.storage import SQLiteBackend
+
+from recall_kit.repository import memory_store
+from recall_kit import __version__
 
 
 @click.group()
@@ -96,8 +105,8 @@ def remember(
 @click.pass_context
 def search(ctx: click.Context, query: str, limit: int, output_json: bool):
     """Search for memories."""
-    recall: RecallKit = ctx.obj["recall"]
-    results: List[Memory] = recall.search(query, limit=limit)
+    memory_store: MemoryStore = ctx.obj["memory_store"]
+    results: List[Memory] =  memory_store.search(query, limit=limit)
 
     if output_json:
         # Output as JSON
@@ -324,6 +333,7 @@ def chat(ctx: click.Context, model: str):
     from litellm import ModelResponse  # type: ignore
 
     recall: RecallKit = ctx.obj["recall"]
+    storage: SQLiteBackend = ctx.obj["storage"]
 
     click.echo("Recall Kit Chat")
     click.echo(f"Using model: {model}")
@@ -331,21 +341,23 @@ def chat(ctx: click.Context, model: str):
     click.echo("Type 'help' for commands")
 
     # Get or create active message set
-    active_message_set = recall.get_active_message_set()
+    active_message_set = storage.get_active_message_set()
 
     # Initialize messages
     if active_message_set:
         # Load messages from active message set
-        messages = recall.get_messages_in_set(active_message_set.id)
+        messages = storage.get_messages_in_set(active_message_set.id)
         messages_dict = [{"role": msg.role, "content": msg.content} for msg in messages]
         click.echo(f"Loaded {len(messages)} messages from active conversation")
     else:
         # Create a new system message
-        system_message = recall.create_message(
+        system_message = storage.store_message(
+            Message(
             role="system",
             content="You are a helpful assistant with access to the user's memories. "
             "Respond to the user's questions using relevant memories when available.",
             metadata={"type": "conversation"},
+            )
         )
 
         # Create a new message set with the system message
@@ -455,7 +467,7 @@ def chat(ctx: click.Context, model: str):
 
             if user_input.lower() == "messages":
                 # Show all messages in the current conversation
-                messages = recall.get_messages_in_set(active_message_set.id)
+                messages = storage.get_messages_in_set(active_message_set.id)
                 if not messages:
                     click.echo("No messages in the current conversation.")
                 else:
@@ -491,10 +503,15 @@ def chat(ctx: click.Context, model: str):
             assistant_content: str = response.choices[0].message.content  # type: ignore
 
             # Create a new assistant message
-            assistant_message = recall.create_message(
+            assistant_message = storage.store_message(
+                Message(
                 role="assistant",
                 content=assistant_content,
                 metadata={"type": "conversation"},
+                tool_call_id=None
+                tool_calls=None,
+                user_id=user.id,
+                )
             )
 
             # Add the assistant message to the active message set

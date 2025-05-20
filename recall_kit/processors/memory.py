@@ -1,6 +1,7 @@
 import json
 from typing import List
 
+from litellm import AllMessageValues
 from pydantic import BaseModel, Field
 
 from ..constants import CONTENT, ROLE, USER
@@ -171,6 +172,8 @@ class MemoryConsolidator:
                 response_format=MemoryResponse,
             )
 
+
+        x = AllMessageValues
         except Exception:
             # If response_format fails, try without it
             response = self.completion(

@@ -8,7 +8,7 @@ and storage backend protocols.
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional, Protocol, Union, runtime_checkable
+from typing import Any, Dict, List, Optional, Protocol, Union, Unpack, runtime_checkable
 
 from litellm import ChatCompletionRequest, ModelResponse, Type  # type: ignore
 from pydantic import BaseModel
@@ -67,22 +67,35 @@ class EmbeddingFunction(Protocol):
 
 @runtime_checkable
 class CompletionFunction(Protocol):
+    # Reflect the following params, supporting
+
+    # model: Required[str]
+    # messages: Required[List[AllMessageValues]]
+    # frequency_penalty: float
+    # logit_bias: dict
+    # logprobs: bool
+    # top_logprobs: int
+    # max_tokens: int
+    # n: int
+    # presence_penalty: float
+    # response_format: dict
+    # seed: int
+    # service_tier: str
+    # stop: Union[str, List[str]]
+    # stream_options: dict
+    # temperature: float
+    # top_p: float
+    # tools: List[ChatCompletionToolParam]
+    # tool_choice: ChatCompletionToolChoiceValues
+    # parallel_tool_calls: bool
+    # function_call: Union[str, dict]
+    # functions: List
+    # user: str
+    # metadata: dict  # litellm specific param
+
     def __call__(
         self,
-        model: str,
-        messages: List[Dict[str, Any]],
-        max_tokens: Optional[int] = None,
-        temperature: Optional[float] = None,
-        response_format: Optional[Union[Dict[str, Any], Type[BaseModel]]] = None,
-        additional_args: Optional[Dict[str, Any]] = None,
-        frequency_penalty: Optional[float] = None,
-        logit_bias: Optional[Dict[str, float]] = None,
-        logprobs: Optional[bool] = None,
-        top_logprobs: Optional[int] = None,
-        n: Optional[int] = None,
-        presence_penalty: Optional[float] = None,
-        seed: Optional[int] = None,
-        service_tier: Optional[str] = None,
+        **request: Unpack[ChatCompletionRequest],
     ) -> ModelResponse:
         ...
 
@@ -109,7 +122,7 @@ class StorageBackendProtocol(Protocol):
     def delete_memory(self, memory_id: int) -> bool:
         ...
 
-    def store_message(self, message: Message) -> None:
+    def store_message(self, message: Message) -> Message:
         ...
 
     def get_message(self, message_id: int) -> Optional[Message]:
@@ -121,13 +134,13 @@ class StorageBackendProtocol(Protocol):
     def store_message_set(self, message_set: MessageSet) -> None:
         ...
 
-    def get_message_set(self, message_set_id: int) -> Optional[MessageSet]:
+    def get_message_set(self, message_set_id: str) -> Optional[MessageSet]:
         ...
 
     def get_active_message_set(self) -> Optional[MessageSet]:
         ...
 
-    def get_messages_in_set(self, message_set_id: int) -> List[Message]:
+    def get_messages_in_set(self, message_set_id: str) -> List[Message]:
         ...
 
     def deactivate_all_message_sets(self) -> None:

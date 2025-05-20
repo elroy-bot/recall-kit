@@ -7,7 +7,7 @@ including retrieval, filtering, reranking, augmentation, embedding, and completi
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional, Type, Union
+from typing import Any, Dict, List, Optional, Type, Union, Unpack
 
 from litellm import ChatCompletionRequest, ModelResponse  # type: ignore
 from pydantic import BaseModel
@@ -135,12 +135,7 @@ class DefaultPlugin:
 
     @staticmethod
     def completion_fn(
-        model: str,
-        messages: List[Dict[str, Any]],
-        max_tokens: Optional[int] = None,
-        temperature: Optional[float] = None,
-        response_format: Optional[Union[Dict[str, Any], Type[BaseModel]]] = None,
-        additional_args: Optional[Dict[str, Any]] = None,
+        **request: Unpack[ChatCompletionRequest],
     ) -> ModelResponse:
         """
         Default completion function using litellm.
@@ -159,14 +154,7 @@ class DefaultPlugin:
 
         from litellm import completion as litellm_completion
 
-        resp = litellm_completion(
-            model=model,
-            messages=messages,
-            max_tokens=max_tokens,
-            temperature=temperature,
-            response_format=response_format,
-            additional_args=additional_args,
-        )
+        resp = litellm_completion(**request)
 
         assert isinstance(resp, ModelResponse), "Response is not of type ModelResponse"
         return resp

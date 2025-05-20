@@ -13,10 +13,12 @@ import json
 from functools import partial
 from typing import Any, Dict, List, Optional, TypeVar
 
-from litellm import ChatCompletionRequest, Type  # type: ignore
+from litellm import ChatCompletionRequest, ChatCompletionUserMessage, Type  # type: ignore
 from toolz import pipe
 
-from recall_kit.models import Memory, Message, MessageSet
+from .storage.base import Memory, Message, MessageSet
+
+from .repository.memory_store import MemoryStore
 
 from .constants import ASSISTANT, CONTENT, ROLE, TOOL, USER
 
@@ -79,6 +81,8 @@ class RecallKit:
         self.filter_fn = filter_fn
         self.rerank_fn = rerank_fn
         self.augment_fn = augment_fn
+
+        self.memory_store = MemoryStore(storage=storage, embedding_fn=embedding_fn)
 
     @classmethod
     def create(
@@ -158,7 +162,7 @@ class RecallKit:
 
         return augmented_request
 
-    def get_message(self, message_id: str) -> Optional[Message]:
+    def get_message(self, message_id: int) -> Optional[Message]:
         """
         Get a message by ID.
 
@@ -181,9 +185,9 @@ class RecallKit:
 
     def create_message_set(
         self,
-        message_ids: List[str],
+        message_ids: List[int],
         active: bool = True,
-        metadata: Optional[Dict[str, Any]] = None,
+        meta_data: Optional[Dict[str, Any]] = None,
         user_id: Optional[int] = None,
     ) -> MessageSet:
         """
@@ -209,9 +213,9 @@ class RecallKit:
         assert isinstance(user_id, int), "user_id must be an integer"
 
         message_set = MessageSet(
-            message_ids=message_ids,
+            message_ids=json.dumps(message_ids),
             active=active,
-            metadata=metadata or {},
+            meta_data=json.dumps(meta_data or {}),
             user_id=user_id,
         )
 
@@ -220,7 +224,7 @@ class RecallKit:
 
         return message_set
 
-    def get_message_set(self, message_set_id: int) -> Optional[MessageSet]:
+    def get_message_set(self, message_set_id: str) -> Optional[MessageSet]:
         """
         Get a message set by ID.
 
@@ -236,7 +240,7 @@ class RecallKit:
         self,
         messages: List[Dict[str, str]],
         response: Any,
-        user_id: Optional[int] = None,
+        user_id: int,
     ) -> MessageSet:
         """
         Store a conversation as a message set.
@@ -255,11 +259,19 @@ class RecallKit:
         # If there's only one user message and an active message set, add to it
         if len(messages) == 1 and messages[0].get(ROLE) == USER and active_message_set:
             # Create a new message for the user input
-            user_message = self.storage.create_message(
-                role=USER,
-                content=messages[0].get(CONTENT, ""),
-                metadata={"type": "conversation"},
-                user_id=user_id,
+            user_message = self.storage.store_message(
+                Message(
+                    ChatCompletionUserMessage(
+                        role=USER,
+                        content=messages[0].get(CONTENT, ""),
+                        metadata={"type": "conversation"},
+                        user_id=user_id,
+                        tool_call_id=messages[0].get("tool_call_id"),
+                        tool_calls=json.loads(messages[0].get("tool_calls"))
+                        if messages[0].get("tool_calls")
+                        else None,
+                    )
+                )
             )
 
             # Create a new message for the assistant response
@@ -275,11 +287,15 @@ class RecallKit:
             else:
                 return active_message_set
 
-            assistant_message = self.create_message(
-                role=ASSISTANT,
-                content=assistant_content,
-                metadata={"type": "conversation"},
-                user_id=user_id,
+            assistant_message = self.storage.store_message(
+                Message(
+                    role=ASSISTANT,
+                    content=assistant_content,
+                    metadata={"type": "conversation"},
+                    user_id=user_id,
+                    tool_call_id=None,
+                    tool_calls=json.loads(response.choices[0].message.tool_calls) if hasattr(response.choices[0].message, "tool_calls") else None,  # type: ignore
+                )
             )
 
             # Update the message set with the new messages
@@ -302,7 +318,9 @@ class RecallKit:
             # If there's an active message set, check for duplicate messages
             existing_messages = []
             if active_message_set:
-                existing_messages = self.get_messages_in_set(active_message_set.id)
+                existing_messages = self.storage.get_messages_in_set(
+                    active_message_set.id
+                )
 
             # Process each message
             for i, msg in enumerate(messages):
@@ -334,27 +352,37 @@ class RecallKit:
                             # Use a shorter prefix to ensure ID is under 40 characters
                             tool_call_id = f"c_{str(uuid.uuid4())}"
 
-                        message = self.create_message(
-                            role=role,
-                            content=content,
-                            metadata={"type": "conversation"},
-                            user_id=user_id,
-                            tool_call_id=tool_call_id,
+                        message = self.storage.store_message(
+                            Message(
+                                role=role,
+                                content=content,
+                                metadata={"type": "conversation"},
+                                user_id=user_id,
+                                tool_call_id=tool_call_id,
+                                tool_calls=None,
+                            )
                         )
                     elif role == ASSISTANT and tool_calls:
-                        message = self.create_message(
-                            role=role,
-                            content=content,
-                            metadata={"type": "conversation"},
-                            user_id=user_id,
-                            tool_calls=json.loads(tool_calls),
+                        message = self.storage.store_message(
+                            Message(
+                                role=role,
+                                content=content,
+                                metadata={"type": "conversation"},
+                                user_id=user_id,
+                                tool_call_id=None,
+                                tool_calls=json.loads(tool_calls),
+                            )
                         )
                     else:
-                        message = self.create_message(
-                            role=role,
-                            content=content,
-                            metadata={"type": "conversation"},
-                            user_id=user_id,
+                        message = self.storage.store_message(
+                            Message(
+                                role=role,
+                                content=content,
+                                metadata={"type": "conversation"},
+                                user_id=user_id,
+                                tool_call_id=tool_call_id,
+                                tool_calls=None,
+                            )
                         )
                     message_ids.append(message.id)
 
@@ -383,11 +411,15 @@ class RecallKit:
                     user_id=user_id,
                 )
 
-            assistant_message = self.create_message(
-                role=ASSISTANT,
-                content=assistant_content,
-                metadata={"type": "conversation"},
-                user_id=user_id,
+            assistant_message = self.storage.store_message(
+                Message(
+                    role=ASSISTANT,
+                    content=assistant_content,
+                    metadata={"type": "conversation"},
+                    user_id=user_id,
+                    tool_call_id=None,
+                    tool_calls=json.loads(response.choices[0].message.tool_calls) if hasattr(response.choices[0].message, "tool_calls") else None,  # type: ignore
+                )
             )
             message_ids.append(assistant_message.id)
 
@@ -502,7 +534,7 @@ class RecallKit:
             )
 
             # Create a memory from the dropped messages
-            memory = self.create_memory(
+            memory = self.memory_store.create_memory(
                 text=dropped_text,
                 title=f"Compressed messages from conversation",
                 metadata={"compressed": True, "message_count": len(dropped_messages)},
@@ -595,7 +627,7 @@ class RecallKit:
             message_ids = [msg.id for msg in message_objects]
 
             # If we have an existing message set, mark it inactive
-            old_message_set = self.get_active_message_set()
+            old_message_set = self.storage.get_active_message_set()
 
             if old_message_set:
                 old_message_set.active = False

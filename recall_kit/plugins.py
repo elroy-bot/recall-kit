@@ -358,7 +358,7 @@ class PluginRegistry:
 
     def register_augment_fn(
         self,
-        augment_fn: Callable[[List[Any], Any], Any],
+        augment_fn: AugmentFunction,
         name: str,
         aliases: Optional[List[str]] = None,
     ) -> None:

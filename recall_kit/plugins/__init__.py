@@ -170,7 +170,7 @@ def register_rerank_fn(
     registry.register_rerank_fn(rerank_fn, name, aliases)
 
 
-def get_rerank_fn(name: str) -> Optional[Callable[[List[Any], Any], List[Any]]]:
+def get_rerank_fn(name: str) -> RerankFunction:
     """
     Get a rerank function by name.
 
@@ -202,7 +202,7 @@ def register_augment_fn(
     registry.register_augment_fn(augment_fn, name, aliases)
 
 
-def get_augment_fn(name: str) -> Optional[Callable[[List[Any], Any], Any]]:
+def get_augment_fn(name: str) -> AugmentFunction:
     """
     Get an augment function by name.
 
