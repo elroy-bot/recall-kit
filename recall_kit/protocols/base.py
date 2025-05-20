@@ -75,6 +75,7 @@ class CompletionFunction(Protocol):
         temperature: Optional[float] = None,
         response_format: Optional[Union[Dict[str, Any], Type[BaseModel]]] = None,
         additional_args: Optional[Dict[str, Any]] = None,
+        # AI!
         # Add foloowing parameters:
         #           No parameter named "frequency_penalty"
         #   No parameter named "logit_bias"
