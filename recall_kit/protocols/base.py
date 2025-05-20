@@ -81,6 +81,7 @@ class CompletionFunction(Protocol):
 
 @runtime_checkable
 class StorageBackendProtocol(Protocol):
+    # AI! update types to conform with specific BaseModel, ie Message, Memory, MessageSet. Id's can be int.
     def store_memory(self, memory: Memory) -> None:
         ...
 
