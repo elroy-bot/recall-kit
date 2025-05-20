@@ -14,7 +14,7 @@ from litellm import ChatCompletionRequest, ModelResponse, Type  # type: ignore
 from pydantic import BaseModel
 
 from ..models.memory import Memory
-from ..models.message import Message
+from ..models.message import Message, MessageSet
 
 
 # Define type protocols for the callback functions
