@@ -93,7 +93,7 @@ recall-kit is built with the following principles:
 
 1. **Composability**: Allow user to customize all stages of memory capture and recall.
 
-1. **Vanilla data stores**: recall-kit supports `Sqlite` (with [sqlite-vec](https://github.com/asg017/sqlite-vec)) and Postgres (with [pgvector](https://github.com/pgvector/pgvector)). It does not leverage dedicated graph databases.
+1. **Vanilla data stores**: recall-kit supports `Sqlite` and Postgres (with [pgvector](https://github.com/pgvector/pgvector)). It does not leverage dedicated graph databases.
 
 1. **Show your work**: Always make the recalled context accessible to the user.
 
@@ -220,7 +220,7 @@ The memory needs of an LLM can vary widely - optimizations might be needed in su
     - Default: sqlite3
     - add postgres support with `uv pip install "recall-kit[postgres]"`
 - Vector store: A K/V supporting `search`, `remove`, and `upsert`.
-    - Default: sqlite-vec
+    - Default: sqlite
     - postgres / pgvector support with `uv pip install "recall-kit[postgres]"`
 - Functions:
     - `embedding`: LLM

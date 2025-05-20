@@ -2,12 +2,13 @@ import json
 from typing import Any, Dict, List, Optional
 
 from ..models.memory import Memory
-from ..protocols.base import EmbeddingFunction, StorageBackendProtocol
+from ..protocols.base import StorageBackendProtocol
+from .embedding import EmbeddingService
 
 
-class MemoryStore:
+class MemoryService:
     def __init__(
-        self, storage: StorageBackendProtocol, embedding_fn: EmbeddingFunction
+        self, storage: StorageBackendProtocol, embedding_service: EmbeddingService
     ):
         """
         Initialize a new MemoryStore instance.
@@ -16,14 +17,14 @@ class MemoryStore:
             storage: The storage backend to use for memory management
         """
         self.storage = storage
-        self.embedding = embedding_fn
+        self.embedding_service = embedding_service
 
     def create_memory(
         self,
         text: str,
         title: Optional[str] = None,
         source_address: Optional[str] = None,
-        metadata: Optional[Dict[str, Any]] = None,
+        source_metadata: List[Dict[str, Any]] = [],
         user_id: Optional[int] = None,
     ) -> Memory:
         """
@@ -50,10 +51,10 @@ class MemoryStore:
         assert isinstance(user_id, int), "user_id must be an integer"
 
         memory = Memory(
-            text=text,
+            content=text,
             title=title,
             source_address=source_address,
-            _meta_data=json.dumps(metadata or {}),
+            _source_metadata=json.dumps(source_metadata or {}),
             user_id=user_id,
         )
 
@@ -73,4 +74,6 @@ class MemoryStore:
         Returns:
             List of relevant Memory objects
         """
-        return self.storage.search_memories(self.embedding(query), limit=limit)
+        return self.storage.search_memories(
+            self.embedding_service.calculate_embedding(query), limit=limit
+        )

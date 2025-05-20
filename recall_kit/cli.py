@@ -16,7 +16,7 @@ from recall_kit import __version__
 from recall_kit.storage import SQLiteBackend
 
 from .core import RecallKit
-from .repository.memory_store import MemoryStore
+from .services.memory import MemoryService
 from .storage.base import Memory
 
 
@@ -71,7 +71,9 @@ def cli(
 
     # Initialize RecallKit with storage and default functions
     ctx.ensure_object(dict)
-    ctx.obj["recall"] = RecallKit.create(storage)
+    ctx.obj["recall"] = RecallKit.create(
+        embedding_model=embedding_model, storage=storage
+    )
 
 
 @cli.command()
@@ -83,7 +85,7 @@ def remember(
     ctx: click.Context, text: str, title: Optional[str], source: Optional[str]
 ):
     """Create a new memory."""
-    memory_store: MemoryStore = ctx.obj["memory_store"]
+    memory_store: MemoryService = ctx.obj["memory_store"]
     memory: Memory = memory_store.create_memory(
         text=text,
         title=title,
@@ -100,7 +102,7 @@ def remember(
 @click.pass_context
 def search(ctx: click.Context, query: str, limit: int, output_json: bool):
     """Search for memories."""
-    memory_store: MemoryStore = ctx.obj["memory_store"]
+    memory_store: MemoryService = ctx.obj["memory_store"]
     results: List[Memory] = memory_store.search(query, limit=limit)
 
     if output_json:
@@ -108,7 +110,7 @@ def search(ctx: click.Context, query: str, limit: int, output_json: bool):
         output = [
             {
                 "id": memory.id,
-                "text": memory.text,
+                "text": memory.content,
                 "title": memory.title,
                 "relevance": memory.relevance,
                 "created_at": memory.created_at.isoformat(),
@@ -126,7 +128,7 @@ def search(ctx: click.Context, query: str, limit: int, output_json: bool):
         click.echo(f"Found {len(results)} memories:")
         for i, memory in enumerate(results, 1):
             click.echo(f"\n{i}. {memory.title} (relevance: {memory.relevance:.2f})")
-            click.echo(f"   {memory.text}")
+            click.echo(f"   {memory.content}")
             if memory.source_address:
                 click.echo(f"   Source: {memory.source_address}")
 
@@ -151,7 +153,7 @@ def ingest(
     import os
 
     recall: RecallKit = ctx.obj["recall"]
-    memory_store: MemoryStore = ctx.obj["memory_store"]
+    memory_store: MemoryService = ctx.obj["memory_store"]
 
     # Determine files to process
     if os.path.isfile(path):
@@ -185,7 +187,7 @@ def ingest(
                 text=content,
                 title=title,
                 source_address=f"file:{file_path}",
-                metadata={"file_path": file_path},
+                source_metadata=[{"file_path": file_path}],
             )
 
             click.echo(f"Ingested: {file_path} -> Memory ID: {memory.id}")

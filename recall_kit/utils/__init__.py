@@ -5,30 +5,21 @@ This module provides utility functions for various operations in Recall Kit,
 including embedding and completion operations.
 """
 
+from litellm.types.utils import ModelResponse
+
 # Import completion utilities
 from .completion import augment_with_memories, extract_content_from_response
 
 # Import embedding utilities
-from .embedding import (
-    bytes_to_embedding,
-    calculate_similarity,
-    calculate_text_hash,
-    embedding_to_bytes,
-    embedding_to_string,
-    get_embedding,
-    string_to_embedding,
-)
+from .embedding import bytes_to_embedding, calculate_similarity, embedding_to_bytes
 
 __all__ = [
     # Embedding utilities
     "calculate_similarity",
     "embedding_to_bytes",
     "bytes_to_embedding",
-    "embedding_to_string",
-    "string_to_embedding",
-    "calculate_text_hash",
-    "get_embedding",
     # Completion utilities
     "extract_content_from_response",
     "augment_with_memories",
+    # Litellm types
 ]

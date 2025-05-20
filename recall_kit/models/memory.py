@@ -43,9 +43,9 @@ class MemorySource(BaseModel):
             user_id: ID of the user who owns this memory (defaults to 1)
         """
         return Memory(
-            text=self.text,
+            content=self.text,
             title=self.title,
             source_address=self.address,
-            _meta_data=json.dumps(self.metadata),
+            _source_metadata=json.dumps(self.metadata),
             user_id=self.user_id,
         )

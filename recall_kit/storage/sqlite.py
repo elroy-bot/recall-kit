@@ -1,7 +1,5 @@
 """
 SQLite storage backend for Recall Kit.
-
-This module provides the SQLite storage backend implementation using sqlite-vec for vector search.
 """
 
 from __future__ import annotations
@@ -13,8 +11,7 @@ import os
 import sqlite3
 from typing import List, Optional
 
-import numpy as np
-from litellm import AllMessageValues, Type
+from litellm import AllMessageValues
 from sqlmodel import Session, SQLModel, create_engine, desc, select
 
 from recall_kit.protocols import StorageBackendProtocol
@@ -27,12 +24,14 @@ from recall_kit.storage.base import (
     serialize_json_field,
 )
 
+from ..utils.embedding import embedding_to_bytes
+
 # Set up logging
 logger = logging.getLogger(__name__)
 
 
 class SQLiteBackend:
-    """SQLite storage backend using sqlite-vec for vector search."""
+    """SQLite storage backend"""
 
     __protocol_class__ = StorageBackendProtocol
 
@@ -131,15 +130,8 @@ class SQLiteBackend:
             conn = self._get_connection()
             cursor = conn.cursor()
             cursor.execute("PRAGMA table_info(memories)")
-            columns = cursor.fetchall()
-            has_embedding_column = any(col["name"] == "embedding" for col in columns)
             conn.close()
 
-            if has_embedding_column:
-                logger.info(
-                    "Detected old schema with embedding column in memories table. Starting migration..."
-                )
-                self.migrate_embeddings()
         except Exception as e:
             logger.error(f"Error checking for migration need: {e}")
 
@@ -148,88 +140,46 @@ class SQLiteBackend:
         # Create a mock cosine similarity function
         conn.create_function("vss_cosine_similarity", 2, lambda a, b: 0.5)
 
-    def migrate_embeddings(self) -> None:
-        """
-        Migrate embeddings from the old schema (embedded in Memory) to the new schema (separate Embedding).
-
-        This function should be called once when upgrading from a version that stored embeddings in the Memory
-        to a version that uses a separate Embedding.
-        """
-        logger.info("Starting embedding migration...")
-
-        # Check if we need to migrate
-        conn = self._get_connection()
-        cursor = conn.cursor()
-
-        # Check if the old schema has an embedding column
-        try:
-            cursor.execute("PRAGMA table_info(memories)")
-            columns = cursor.fetchall()
-            has_embedding_column = any(col["name"] == "embedding" for col in columns)
-            has_metadata_column = any(col["name"] == "metadata" for col in columns)
-
-            if not has_embedding_column:
-                logger.info(
-                    "No embedding column found in memories table. Migration not needed."
-                )
-                conn.close()
-                return
-
-            # Get all memories with embeddings
-            cursor.execute(
-                "SELECT id, text, embedding FROM memories WHERE embedding IS NOT NULL"
-            )
-            memories_with_embeddings = cursor.fetchall()
-
-            logger.info(
-                f"Found {len(memories_with_embeddings)} memories with embeddings to migrate"
+    def get_active_memories(self) -> List[Memory]:
+        with Session(self.engine) as session:
+            return list(
+                session.exec(
+                    select(Memory)
+                    .where(Memory.active == True)
+                    .order_by(desc(Memory.created_at))
+                ).all()
             )
 
-            # Migrate each embedding
-            for memory in memories_with_embeddings:
-                memory_id = memory["id"]
-                text = memory["text"]
-                embedding_bytes = memory["embedding"]
+    def store_embedding(
+        self, model: str, source_type: str, source_id: int, embedding: List[float]
+    ) -> None:
+        embedding_bytes = embedding_to_bytes(embedding)
 
-                if embedding_bytes:
-                    # Calculate MD5 hash of the text content
-                    md5_hash = hashlib.md5(text.encode("utf-8")).hexdigest()
+        with Session(self.engine) as session:
+            # Check if we already have an embedding for this memory
+            statement = select(Embedding).where(
+                Embedding.source_type == source_type,
+                Embedding.source_id == source_id,
+                Embedding.model_name == model,
+            )
+            existing_embedding = session.exec(statement).first()
 
-                    # Store in the new Embedding
-                    with Session(self.engine) as session:
-                        embedding_table = Embedding(
-                            source_table="memories",
-                            source_id=memory_id,
-                            embedding=embedding_bytes,
-                            md5=md5_hash,
-                        )
-                        session.add(embedding_table)
-                        session.commit()
-
-            logger.info("Embedding migration completed successfully")
-
-            # If we also need to migrate metadata to meta_data
-            if has_metadata_column:
-                logger.info("Migrating metadata column to meta_data...")
-                # This would require a more complex migration with table recreation in SQLite
-                # For now, we'll just log that this needs to be done manually
-                logger.info(
-                    "Note: metadata column needs to be manually migrated to meta_data"
+            if existing_embedding:
+                # Update existing embedding
+                existing_embedding.embedding = embedding_bytes
+                session.merge(existing_embedding)
+            else:
+                # Create new embedding record
+                embedding_table = Embedding(
+                    model_name=model,
+                    source_type=source_type,
+                    source_id=source_id,
+                    embedding=embedding_bytes,
+                    md5=hashlib.md5(embedding_bytes).hexdigest(),
                 )
+                session.add(embedding_table)
 
-            # Optionally: Remove the embedding column from the memories table
-            # This is a schema change and might require recreating the table in SQLite
-            # For safety, we'll leave this as a manual step
-
-        except Exception as e:
-            logger.error(f"Error during embedding migration: {e}")
-        finally:
-            conn.close()
-
-    def fetch_embedding(
-        self, source_table: Type[SQLModel], source_id: int
-    ) -> List[float]:
-        raise NotImplementedError
+            session.commit()
 
     def store_memory(self, memory: Memory) -> None:
         """
@@ -242,7 +192,7 @@ class SQLiteBackend:
         parent_ids_json = serialize_json_field(memory.parent_ids)
 
         # Convert metadata dict to JSON string
-        meta_data_json = serialize_json_field(memory.metadata)
+        meta_data_json = serialize_json_field(memory.source_metadata)
 
         # Ensure user_id is set
         if not hasattr(memory, "user_id") or memory.user_id is None:
@@ -251,12 +201,12 @@ class SQLiteBackend:
         # Create SQLModel object for memory
         stored_memory = Memory(
             id=memory.id,
-            text=memory.text,
+            content=memory.content,
             title=memory.title,
             source_address=memory.source_address,
             _parent_ids=parent_ids_json,
             created_at=memory.created_at,
-            _meta_data=meta_data_json,
+            _source_metadata=meta_data_json,
             active=memory.active,
             user_id=memory.user_id,
         )
@@ -266,73 +216,6 @@ class SQLiteBackend:
             # Merge will insert or update as needed
             session.merge(stored_memory)
             session.commit()
-
-        # Handle embedding separately
-        if memory.embedding:
-            # Calculate MD5 hash of the text content
-            md5_hash = hashlib.md5(memory.text.encode("utf-8")).hexdigest()
-
-            # Convert embedding to bytes
-            embedding_array = np.array(memory.embedding, dtype=np.float32)
-            embedding_bytes = embedding_array.tobytes()
-
-            # Store embedding in the embeddings table
-            with Session(self.engine) as session:
-                # Check if we already have an embedding for this memory
-                statement = select(Embedding).where(
-                    Embedding.source_table == "memories",
-                    Embedding.source_id == memory.id,
-                )
-                existing_embedding = session.exec(statement).first()
-
-                if existing_embedding:
-                    # Update existing embedding
-                    existing_embedding.embedding = embedding_bytes
-                    existing_embedding.md5 = md5_hash
-                    session.merge(existing_embedding)
-                else:
-                    # Create new embedding record
-                    embedding_table = Embedding(
-                        source_table="memories",
-                        source_id=memory.id,
-                        embedding=embedding_bytes,
-                        md5=md5_hash,
-                    )
-                    session.add(embedding_table)
-
-                session.commit()
-
-            # Handle vector index separately with raw SQLite
-            conn = self._get_connection()
-            cursor = conn.cursor()
-
-            try:
-                # Convert embedding to comma-separated string for sqlite-vec
-                embedding_str = ",".join(str(x) for x in memory.embedding)
-
-                # First delete any existing entry
-                cursor.execute("DELETE FROM memories_index WHERE id = ?", (memory.id,))
-
-                # Then insert the new entry
-                cursor.execute(
-                    """
-                    INSERT INTO memories_index (embedding, id, text)
-                    VALUES (?, ?, ?)
-                    """,
-                    (
-                        embedding_str,
-                        memory.id,
-                        memory.text,
-                    ),
-                )
-                conn.commit()
-            except sqlite3.OperationalError:
-                # For testing purposes, just insert the data without vector operations
-                logger.debug(
-                    "Vector operations not available, skipping vector index update"
-                )
-            finally:
-                conn.close()
 
     def get_memory(self, memory_id: int) -> Optional[Memory]:
         """
@@ -345,27 +228,7 @@ class SQLiteBackend:
             The Memory object if found, None otherwise
         """
         with Session(self.engine) as session:
-            stored_memory = session.get(Memory, memory_id)
-
-            if not stored_memory:
-                return None
-
-            return self._table_to_memory(stored_memory)
-
-    def get_all_memories(self) -> List[Memory]:
-        """
-        Retrieve all memories.
-
-        Returns:
-            List of all Memory objects
-        """
-        with Session(self.engine) as session:
-            statement = select(Memory)
-            stored_memorys = session.exec(statement).all()
-
-            return [
-                self._table_to_memory(stored_memory) for stored_memory in stored_memorys
-            ]
+            return session.get(Memory, memory_id)
 
     def search_memories(
         self, query_embedding: List[float], limit: int = 5
@@ -409,9 +272,8 @@ class SQLiteBackend:
 
                 stored_memory = session.get(Memory, memory_id)
                 if stored_memory:
-                    memory = self._table_to_memory(stored_memory)
-                    memory.relevance = relevance
-                    memories.append(memory)
+                    stored_memory.relevance = relevance
+                    memories.append(stored_memory)
 
         conn.close()
         return memories
@@ -425,6 +287,31 @@ class SQLiteBackend:
         """
         # This is essentially the same as store_memory, since we're using merge
         self.store_memory(memory)
+
+    def fetch_embedding(
+        self,
+        model: str,
+        source_type: str,
+        source_id: int,
+    ) -> Optional[Embedding]:
+        """
+        Fetch an embedding from the SQLite database.
+
+        Args:
+            model: The model name
+            source_type: The type of source (e.g., "memories")
+            source_id: The ID of the source
+
+        Returns:
+            The Embedding object if found, None otherwise
+        """
+        with Session(self.engine) as session:
+            statement = select(Embedding).where(
+                Embedding.source_type == source_type,
+                Embedding.source_id == source_id,
+                Embedding.model_name == model,
+            )
+            return session.exec(statement).first()
 
     def delete_memory(self, memory_id: int) -> bool:
         """
@@ -449,7 +336,7 @@ class SQLiteBackend:
         # Delete the corresponding embedding
         with Session(self.engine) as session:
             statement = select(Embedding).where(
-                Embedding.source_table == "memories",
+                Embedding.source_type == Memory.__name__,
                 Embedding.source_id == memory_id,
             )
             embedding_table = session.exec(statement).first()
@@ -530,7 +417,7 @@ class SQLiteBackend:
         # Create SQLModel object
         stored_message_set = MessageSet(
             id=message_set.id,
-            message_ids=message_ids_json,
+            _message_ids=message_ids_json,
             active=message_set.active,
             created_at=message_set.created_at,
             meta_data=meta_data_json,
@@ -650,23 +537,21 @@ class SQLiteBackend:
         """
         with Session(self.engine) as session:
             # Check if user with this token already exists
-            statement = select(User).where(User.token == token)
-            existing_user = session.exec(statement).first()
+            existing_user = session.exec(
+                select(User).where(User.token == token)
+            ).first()
 
             if existing_user:
-                return existing_user.id
+                id = existing_user.id
+            else:
+                new_user = User(token=token)
+                session.add(new_user)
+                session.commit()
+                session.refresh(new_user)
+                id = new_user.id
 
-            # Create new user
-            # Get the highest existing ID
-            statement = select(User).order_by(desc(User.id)).limit(1)
-            highest_user = session.exec(statement).first()
-            next_id = 1 if not highest_user else highest_user.id + 1
-
-            new_user = User(id=next_id, token=token)
-            session.add(new_user)
-            session.commit()
-
-            return new_user.id
+            assert id
+            return id
 
     def get_user_by_token(self, token: str) -> Optional[int]:
         """

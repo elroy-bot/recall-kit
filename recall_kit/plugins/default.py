@@ -10,6 +10,7 @@ from __future__ import annotations
 from typing import List, Unpack
 
 from litellm import ChatCompletionRequest, ModelResponse  # type: ignore
+from litellm.types.utils import EmbeddingResponse
 from toolz import pipe
 from toolz.curried import filter, map, take
 
@@ -119,7 +120,7 @@ class DefaultPlugin:
         return augment_with_memories(request, memories_text)
 
     @staticmethod
-    def embedding_fn(text: str) -> List[float]:
+    def embedding_fn(model: str, text: str) -> List[float]:
         """
         Default embedding function using litellm.
 
@@ -129,9 +130,13 @@ class DefaultPlugin:
         Returns:
             List of embedding vectors
         """
-        from recall_kit.utils.embedding import get_embedding
 
-        return get_embedding(text, model="text-embedding-3-small")
+        from litellm import embedding as litellm_embedding
+
+        resp = litellm_embedding(model=model, texts=[text])
+        assert isinstance(resp, EmbeddingResponse)
+
+        return resp.data[0]["embedding"]
 
     @staticmethod
     def completion_fn(

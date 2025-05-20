@@ -11,6 +11,7 @@ import pytest
 from click.testing import CliRunner
 
 from recall_kit.cli import cli
+from recall_kit.constants import CONTENT, ROLE, SYSTEM, USER
 
 
 @pytest.fixture
@@ -377,7 +378,7 @@ def test_chat_completion(
                     (object,),
                     {
                         "message": type(
-                            "obj", (object,), {"content": "This is a test response"}
+                            "obj", (object,), {CONTENT: "This is a test response"}
                         )
                     },
                 )
@@ -415,9 +416,9 @@ def test_chat_completion(
         len(kwargs["messages"]) == 3
     )  # System message + user message + assistant message
     # First message should be system
-    assert kwargs["messages"][0][ROLE] == "system"
+    assert kwargs["messages"][0][ROLE] == SYSTEM
     # Second message should be user
-    assert kwargs["messages"][1][ROLE] == "user"
-    assert kwargs["messages"][1]["content"] == "What is the meaning of life?"
+    assert kwargs["messages"][1][ROLE] == USER
+    assert kwargs["messages"][1][CONTENT] == "What is the meaning of life?"
     # Third message should be assistant (from a previous interaction or initialization)
     assert kwargs["messages"][2][ROLE] == "assistant"

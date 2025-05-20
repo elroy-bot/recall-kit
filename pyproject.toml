@@ -30,6 +30,8 @@ dependencies = [
     "litellm",
     "sqlmodel",
     "toolz",
+    "scipy",
+    "scikit-learn",
 ]
 
 [project.optional-dependencies]

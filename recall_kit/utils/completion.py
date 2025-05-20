@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from litellm import ChatCompletionRequest, ModelResponse  # type: ignore
 
-from ..constants import ROLE
+from ..constants import CONTENT, ROLE, SYSTEM
 
 
 def extract_content_from_response(response: ModelResponse) -> str:
@@ -24,7 +24,7 @@ def extract_content_from_response(response: ModelResponse) -> str:
     """
     if hasattr(response, "choices") and len(response.choices) > 0:
         choice = response.choices[0]
-        if hasattr(choice, "message") and hasattr(choice.message, "content"):  # type: ignore
+        if hasattr(choice, "message") and hasattr(choice.message, CONTENT):  # type: ignore
             return choice.message.content  # type: ignore
 
     # Fallback for different response structures
@@ -68,18 +68,16 @@ def augment_with_memories(
     if "messages" in augmented_request:
         # Find system message if it exists
         system_msg_idx = next(
-            (i for i, msg in enumerate(messages) if msg.get(ROLE) == "system"),
+            (i for i, msg in enumerate(messages) if msg.get(ROLE) == SYSTEM),
             None,
         )
 
         if system_msg_idx is not None:
             # Append to existing system message
-            messages[system_msg_idx][
-                "content"
-            ] += f"\n\n{memory_context}"  # type: ignore
+            messages[system_msg_idx][CONTENT] += f"\n\n{memory_context}"  # type: ignore
         else:
             # Insert new system message at the beginning
-            messages.insert(0, {ROLE: "system", "content": memory_context})
+            messages.insert(0, {ROLE: SYSTEM, CONTENT: memory_context})
 
     request["messages"] = messages
 

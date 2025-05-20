@@ -1,4 +1,4 @@
-from typing import Any, Generator, List, Optional
+from typing import Any, Dict, Generator, List, Optional
 
 import numpy as np
 import pytest
@@ -6,6 +6,8 @@ from litellm import AllMessageValues
 
 from recall_kit.core import RecallKit
 from recall_kit.storage.sqlite import SQLiteBackend
+
+from ..recall_kit.storage.base import Memory, Message, MessageSet
 
 
 @pytest.fixture(scope="function")
@@ -51,60 +53,59 @@ class MockStorageBackend:
     """Mock storage backend for testing."""
 
     def __init__(self):
-        self.memories = {}
-        self.messages = {}
-        self.message_sets = {}
+        self._memories: Dict[int, Memory] = {}
+        self._messages: Dict[int, Message] = {}
+        self._message_sets: Dict[int, MessageSet] = {}
         self.users = {"default": 1}  # Default user with ID 1
         self.next_user_id = 2
 
     def store_memory(self, memory):
-        self.memories[memory.id] = memory
+        self._memories[memory.id] = memory
 
     def get_memory(self, memory_id):
-        return self.memories.get(memory_id)
-
-    def get_all_memories(self):
-        return list(self.memories.values())
+        return self._memories.get(memory_id)
 
     def search_memories(self, query_embedding, limit=5):
         # Simple mock implementation that returns all memories
-        return list(self.memories.values())[:limit]
+        return list(self._memories.values())[:limit]
 
     def update_memory(self, memory):
-        self.memories[memory.id] = memory
+        self._memories[memory.id] = memory
 
     def delete_memory(self, memory_id):
-        if memory_id in self.memories:
-            del self.memories[memory_id]
+        if memory_id in self._memories:
+            del self._memories[memory_id]
             return True
         return False
 
-    def store_message(self, message):
-        self.messages[message.id] = message
+    def store_message(self, message) -> int:
+        self._messages[message.id] = message
+        return message.id
 
-    def get_message(self, message_id):
-        return self.messages.get(message_id)
+    def get_message(self, message_id) -> AllMessageValues:
+        return self._messages[message_id].data
 
-    def store_message_set(self, message_set):
-        self.message_sets[message_set.id] = message_set
+    def store_message_set(self, message_set) -> int:
+        self._message_sets[message_set.id] = message_set
+        return message_set.id
 
     def get_message_set(self, message_set_id):
-        return self.message_sets.get(message_set_id)
+        return self._message_sets.get(message_set_id)
 
     def get_active_message_set(self):
-        for message_set in self.message_sets.values():
+        for message_set in self._message_sets.values():
             if message_set.active:
                 return message_set
         return None
 
-    def get_messages_in_set(self, message_set_id) -> AllMessageValues:
+    def get_messages_in_set(self, message_set_id) -> List[AllMessageValues]:
         message_set = self.get_message_set(message_set_id)
         if not message_set:
             return []
-        return [self.get_message(msg_id).data for msg_id in message_set.message_ids]  #
+        return [self.get_message(msg_id) for msg_id in message_set.message_ids]
 
     def deactivate_all_message_sets(self):
-        for message_set in self.message_sets.values():
+        for message_set in self._message_sets.values():
             message_set.active = False
 
     def create_user(self, token: str) -> int:

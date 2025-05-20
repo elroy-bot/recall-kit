@@ -11,11 +11,8 @@ import logging
 from typing import Any, Dict, List, Optional
 
 from fastapi import Depends, HTTPException
-from litellm import (  # type: ignore
-    AllMessageValues,
-    ChatCompletionRequest,
-    ModelResponse,
-)
+from litellm import ModelResponse  # type: ignore
+from litellm import AllMessageValues, ChatCompletionRequest  # type: ignore
 
 from ..core import RecallKit  # type: ignore
 from ..processors.memory import MemoryConsolidator
@@ -61,7 +58,7 @@ async def create_chat_completion(
 
         # Always perform auto-consolidation after each chat completion
         # Use LLM-driven consolidation
-        memory_consolidator.consolidate_memories(model=request["model"])
+        memory_consolidator.consolidate_memories(completion_model=request["model"])
         return response
 
     except Exception as e:

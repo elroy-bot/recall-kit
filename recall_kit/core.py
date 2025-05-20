@@ -11,19 +11,16 @@ from __future__ import annotations
 import datetime
 import json
 from functools import partial
-from typing import Any, Dict, List, Optional, TypeVar
+from typing import Any, Deque, Dict, List, Optional, Type, TypeVar
 
-from litellm import (  # type: ignore
-    ChatCompletionRequest,
-    ChatCompletionUserMessage,
-    Type,
-)
+from litellm import AllMessageValues, ChatCompletionRequest
 from toolz import pipe
 
 from .constants import CONTENT, ROLE, TOOL
-from .repository.memory_store import MemoryStore
-from .storage.base import Memory, MessageSet
-from .utils.messaging import to_assistant_message, to_tool_message
+from .services.embedding import EmbeddingService
+from .services.memory import MemoryService
+from .storage.base import Memory, Message, MessageSet
+from .utils.messaging import to_tool_message
 
 # Type variable for the RecallKit class
 T = TypeVar("T", bound="RecallKit")
@@ -52,6 +49,7 @@ class RecallKit:
 
     def __init__(
         self,
+        embedding_model: str,
         storage: StorageBackendProtocol,
         embedding_fn: EmbeddingFunction,
         completion_fn: CompletionFunction,
@@ -85,11 +83,18 @@ class RecallKit:
         self.rerank_fn = rerank_fn
         self.augment_fn = augment_fn
 
-        self.memory_store = MemoryStore(storage=storage, embedding_fn=embedding_fn)
+        self.embedding_service = EmbeddingService(
+            storage, embedding_fn, embedding_model
+        )
+
+        self.memory_store = MemoryService(
+            storage=storage, embedding_service=self.embedding_service
+        )
 
     @classmethod
     def create(
         cls: Type[T],
+        embedding_model: str,
         storage: Optional[StorageBackendProtocol] = None,
         embedding_fn: Optional[EmbeddingFunction] = None,
         completion_fn: Optional[CompletionFunction] = None,
@@ -118,6 +123,7 @@ class RecallKit:
         from recall_kit.plugins import registry
 
         return cls(
+            embedding_model=embedding_model,
             storage=storage or registry.get_storage_backend("default"),
             embedding_fn=embedding_fn or registry.get_embedding_fn("default"),
             completion_fn=completion_fn or registry.get_completion_fn("default"),
@@ -219,10 +225,10 @@ class RecallKit:
     def compress_messages(
         self,
         model: str,
-        messages: List[Dict[str, str]],
+        messages: List[Message],
         target_token_count: int = 4000,
         max_message_age: Optional[datetime.timedelta] = None,
-    ) -> List[Dict[str, str]]:
+    ) -> List[AllMessageValues]:
         """
         Compress messages to fit within the context window, by summarizing earlier messages.
 
@@ -250,26 +256,25 @@ class RecallKit:
             return []
 
         # Find system message if it exists
-        system_messages = [msg for msg in messages if msg.get(ROLE) == SYSTEM]
-        non_system_messages = [msg for msg in messages if msg.get(ROLE) != SYSTEM]
+        system_messages = [msg for msg in messages if msg.data[ROLE] == SYSTEM]
+        non_system_messages = [msg for msg in messages if msg.data[ROLE] != SYSTEM]
 
         # If no system message, we'll just work with all messages
         if system_messages:
             system_message = system_messages[0]
             current_token_count = token_counter(
-                model=model, text=system_message.get(CONTENT, "")
+                model=model, text=str(system_message.data.get(CONTENT, ""))
             )
         else:
             system_message = None
             current_token_count = 0
 
-        kept_messages = deque()
+        kept_messages: Deque[Message] = deque()
         dropped_messages = []
 
         # Process messages in reverse order (newest first)
         for msg in reversed(non_system_messages):
-            msg_content = msg.get(CONTENT, "")
-            msg_role = msg.get(ROLE, "")
+            msg_content = str(msg.data.get(CONTENT, ""))
 
             # Calculate tokens for this message
             msg_token_count = token_counter(model=model, text=msg_content)
@@ -277,8 +282,8 @@ class RecallKit:
             # Check if we need to keep this message due to tool calls
             if (
                 len(kept_messages) > 0
-                and kept_messages[0].get(ROLE) == TOOL
-                and msg_role == ASSISTANT
+                and kept_messages[0].data[ROLE] == TOOL
+                and msg.data[ROLE] == ASSISTANT
             ):
                 # If the last message kept was a tool call, we must keep the corresponding assistant message
                 kept_messages.appendleft(msg)
@@ -292,8 +297,8 @@ class RecallKit:
                 continue
 
             # Check if the message is too old (if we have a max age)
-            if max_message_age and "created_at" in msg:
-                msg_created_at = msg.get("created_at")
+            if max_message_age and msg.created_at:
+                msg_created_at = msg.created_at
                 if isinstance(msg_created_at, str):
                     msg_created_at = datetime.datetime.fromisoformat(msg_created_at)
 
@@ -313,22 +318,46 @@ class RecallKit:
             # Create a consolidated memory from the dropped messages
             dropped_text = "\n".join(
                 [
-                    f"{msg.get('role', 'unknown').upper()}: {msg.get('content', '')}"
+                    f"{msg[ROLE].upper()}: {msg.get('content', '')}"
                     for msg in dropped_messages
                 ]
             )
 
-            # Create a memory from the dropped messages
+            memory_text: str = (
+                self.completion(
+                    model=model,
+                    messages=[
+                        {
+                            ROLE: SYSTEM,
+                            CONTENT: "You are a memory summarizer. Summarize the following messages.",
+                        },
+                        {
+                            ROLE: ASSISTANT,
+                            CONTENT: dropped_text,
+                        },
+                    ],
+                    temperature=0.0,
+                    max_tokens=target_token_count,
+                )
+                .choices[0]
+                .message.content
+            )  # type: ignore
+
             memory = self.memory_store.create_memory(
-                text=dropped_text,
-                title=f"Compressed messages from conversation",
-                metadata={"compressed": True, "message_count": len(dropped_messages)},
+                text=memory_text,
+                title="Summary of dropped messages",
+                source_metadata=[
+                    {
+                        "source_type": MessageSet.__name__,
+                        "source_id": self.storage.get_active_message_set().id,
+                    },
+                ],
             )
 
             # Find the earliest kept assistant message to append the summary
-            earliest_assistant_msg = None
+            earliest_assistant_msg: Optional[Message] = None
             for msg in kept_messages:
-                if msg.get(ROLE) == ASSISTANT:
+                if msg.data.get(ROLE) == ASSISTANT:
                     earliest_assistant_msg = msg
                     break
 
@@ -344,8 +373,9 @@ class RecallKit:
                 tool_call_id = f"c_{str(uuid.uuid4())}"
 
                 # Add tool_calls to the assistant message
-                if "tool_calls" not in earliest_assistant_msg:
-                    earliest_assistant_msg["tool_calls"] = [
+                if "tool_calls" not in earliest_assistant_msg.data:
+                    data = earliest_assistant_msg.data
+                    data["tool_calls"] = [
                         {
                             "id": tool_call_id,
                             "type": "function",
@@ -353,12 +383,12 @@ class RecallKit:
                         }
                     ]
 
-                tool_message = {
-                    ROLE: TOOL,
-                    CONTENT: summary_content,
-                    "metadata": {"type": "summary", "memory_id": memory.id},
-                    "tool_call_id": tool_call_id,
-                }
+                    # Need to create a NEW assistnat message in this scenario, and drop the existing assistant message
+
+                new_id = self.storage.store_message(
+                    to_tool_message(content=summary_content, tool_call_id=tool_call_id)
+                )
+                tool_message = self.storage.get_message(new_id)
 
                 # Find the index of the earliest assistant message
                 earliest_assistant_idx = None
@@ -372,44 +402,24 @@ class RecallKit:
                     kept_messages.insert(earliest_assistant_idx + 1, tool_message)
 
         # Construct the final message list
-        result = list(kept_messages)
+        result: List[Message] = list(kept_messages)
         if system_message:
             result.insert(0, system_message)
 
-        # Create a new message set with the kept messages and mark the old one inactive
-        if result:
-            # Store the messages in the database
-            for i, msg in enumerate(result):
-                role = msg.get(ROLE, "")
-                tool_call_id = msg.get("tool_call_id")
-                tool_calls = msg.get("tool_calls")
+        message_ids = []
 
-                # Create message with appropriate parameters based on role
-                if role == TOOL and tool_call_id:
-                    message_id = self.storage.store_message(
-                        to_tool_message(
-                            content=msg.get(CONTENT, ""), tool_call_id=tool_call_id
-                        )
-                    )
-                elif role == ASSISTANT:
-                    message_id = self.storage.store_message(
-                        to_assistant_message(
-                            content=msg.get(CONTENT, ""),
-                            tool_calls=tool_calls,
-                        )
-                    )
+        for msg in result:
+            if msg.id is None:
+                message_ids.append(self.storage.store_message(msg.data))
+            else:
+                message_ids.append(msg.id)
 
-                else:
-                    raise NotImplementedError("Unexpected)")
+        # If we have an existing message set, mark it inactive
+        old_message_set = self.storage.get_active_message_set()
 
-            # Create a new message set
-
-            # If we have an existing message set, mark it inactive
-            old_message_set = self.storage.get_active_message_set()
-
-            if old_message_set:
-                old_message_set.active = False
-                self.storage.store_message_set(old_message_set)
+        if old_message_set:
+            old_message_set.active = False
+            self.storage.store_message_set(old_message_set)
 
             # Create a new active message set
             self.create_message_set(
@@ -417,4 +427,4 @@ class RecallKit:
                 active=True,
             )
 
-        return result
+        return [msg.data for msg in result]

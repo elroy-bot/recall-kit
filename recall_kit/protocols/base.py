@@ -10,16 +10,11 @@ from __future__ import annotations
 
 from typing import List, Optional, Protocol, Unpack, runtime_checkable
 
-from litellm import (  # type: ignore
-    AllMessageValues,
-    ChatCompletionRequest,
-    ModelResponse,
-    Type,
-)
-from sqlmodel import SQLModel
+from litellm import ModelResponse  # type: ignore
+from litellm import AllMessageValues, ChatCompletionRequest, Type  # type: ignore
 
 from ..models.memory import Memory
-from ..storage.base import MessageSet
+from ..storage.base import Embedding, MessageSet
 
 
 # Define type protocols for the callback functions
@@ -66,7 +61,7 @@ class AugmentFunction(Protocol):
 
 @runtime_checkable
 class EmbeddingFunction(Protocol):
-    def __call__(self, text: str) -> List[float]:
+    def __call__(self, model: str, text: str) -> List[float]:
         ...
 
 
@@ -113,17 +108,25 @@ class StorageBackendProtocol(Protocol):
     def get_memory(self, memory_id: int) -> Optional[Memory]:
         ...
 
-    def get_all_memories(self) -> List[Memory]:
-        ...
-
     def search_memories(
         self, query_embedding: List[float], limit: int = 5
     ) -> List[Memory]:
         ...
 
     def fetch_embedding(
-        self, source_table: Type[SQLModel], source_id: int
-    ) -> List[float]:
+        self,
+        model: str,
+        source_type: str,
+        source_id: int,
+    ) -> Optional[Embedding]:
+        ...
+
+    def get_active_memories(self) -> List[Memory]:
+        ...
+
+    def store_embedding(
+        self, model: str, source_type: str, source_id: int, embedding: List[float]
+    ) -> None:
         ...
 
     def update_memory(self, memory: Memory) -> None:

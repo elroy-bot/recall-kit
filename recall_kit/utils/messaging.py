@@ -24,7 +24,7 @@ from litellm import (
     OpenAIMessageContent,
 )
 
-from ..constants import ROLE
+from ..constants import CONTENT, ROLE, SYSTEM, USER
 
 
 def to_user_message(
@@ -39,7 +39,7 @@ def to_user_message(
     Returns:
         A ChatCompletionUserMessage dictionary
     """
-    return {ROLE: "user", "content": content}
+    return {ROLE: USER, CONTENT: content}
 
 
 def to_assistant_message(
@@ -71,7 +71,7 @@ def to_assistant_message(
     message: ChatCompletionAssistantMessage = {ROLE: "assistant"}
 
     if content is not None:
-        message["content"] = content
+        message[CONTENT] = content
 
     if name is not None:
         message["name"] = name
@@ -107,7 +107,7 @@ def to_tool_message(
     """
     return {
         ROLE: "tool",
-        "content": content,
+        CONTENT: content,
         "tool_call_id": tool_call_id,
     }
 
@@ -126,7 +126,7 @@ def to_system_message(
     Returns:
         A ChatCompletionSystemMessage dictionary
     """
-    message: ChatCompletionSystemMessage = {ROLE: "system", "content": content}
+    message: ChatCompletionSystemMessage = {ROLE: SYSTEM, CONTENT: content}
 
     if name is not None:
         message["name"] = name
@@ -154,7 +154,7 @@ def function_message(
         ROLE: "function",
         "name": name,
         "tool_call_id": tool_call_id,
-        "content": content,
+        CONTENT: content,
     }
 
 
@@ -172,7 +172,7 @@ def developer_message(
     Returns:
         A ChatCompletionDeveloperMessage dictionary
     """
-    message: ChatCompletionDeveloperMessage = {ROLE: "developer", "content": content}
+    message: ChatCompletionDeveloperMessage = {ROLE: "developer", CONTENT: content}
 
     if name is not None:
         message["name"] = name

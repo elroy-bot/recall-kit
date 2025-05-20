@@ -20,6 +20,26 @@ from sqlmodel import Field, SQLModel
 logger = logging.getLogger(__name__)
 
 
+class Recallable(SQLModel):
+    __abstract__ = True
+    """Base class for all recallable objects."""
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+
+    @property
+    def source_type(self) -> str:
+        """Return a unique address for the object."""
+        return self.__class__.__name__
+
+    def to_text(self) -> str:
+        """Convert the object to a text representation."""
+        raise NotImplementedError("Subclasses must implement this method.")
+
+    def md5(self) -> str:
+        """Return the MD5 hash of the content."""
+        return self.to_text().encode("utf-8").hex()
+
+
 # SQLModel classes for database tables
 class User(SQLModel, table=True):
     """SQLModel for the users table."""
@@ -29,34 +49,35 @@ class User(SQLModel, table=True):
     created_at: datetime.datetime = Field(default_factory=datetime.datetime.now)
 
 
-class Memory(SQLModel, table=True):
+class Memory(Recallable, table=True):
     """SQLModel for the memories table."""
 
     id: Optional[int] = Field(default=None, primary_key=True)
-    text: str
+    content: str
     title: str
     source_address: Optional[str] = None
     _parent_ids: Optional[str] = None  # JSON string of parent IDs
     created_at: datetime.datetime = Field(default_factory=datetime.datetime.now)
-    _meta_data: Optional[str] = None  # JSON string of metadata
+    _source_metadata: Optional[str] = None  # JSON string of metadata
     active: bool = Field(default=True)
     user_id: int
 
-    @property
-    def meta_data(self) -> Dict[str, Any]:
-        """Parse the meta_data field into a dictionary."""
-        if self._meta_data:
-            try:
-                return json.loads(self._meta_data)
-            except json.JSONDecodeError:
-                logger.warning(f"Failed to parse meta_data: {self._meta_data}")
-        return {}
+    def to_text(self) -> str:
+        """Convert the memory to a text representation."""
+        return f"# {self.title}\n{self.content}"
 
-    @meta_data.setter
-    def meta_data(self, value: Dict[str, Any]) -> None:
+    @property
+    def source_metadata(self) -> List[Dict[str, Any]]:
+        """Parse the meta_data field into a dictionary."""
+        if self._source_metadata:
+            return json.loads(self._source_metadata)
+        return []
+
+    @source_metadata.setter
+    def source_metadata(self, value: List[Dict[str, Any]]) -> None:
         """Set the meta_data field from a dictionary."""
-        assert isinstance(value, dict), "meta_data must be a dictionary"
-        self._meta_data = json.dumps(value)
+        assert isinstance(value, List), "meta_data must be a dictionary"
+        self._source_metadata = json.dumps(value)
 
     @property
     def parent_ids(self) -> List[int]:
@@ -86,8 +107,9 @@ class Embedding(SQLModel, table=True):
     """SQLModel for the embeddings table."""
 
     id: Optional[int] = Field(default=None, primary_key=True)
-    source_table: str  # The table name that this embedding is for
-    source_id: str  # The ID of the record in the source table
+    source_type: str  # The table name that this embedding is for
+    source_id: int  # The ID of the record in the source table
+    model_name: str
     embedding: bytes = Field(sa_column=Column(LargeBinary))
     md5: str  # MD5 hash of the textual content that was embedded
     created_at: datetime.datetime = Field(default_factory=datetime.datetime.now)

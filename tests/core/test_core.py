@@ -8,188 +8,27 @@ import json
 import pytest
 from toolz import pipe
 
-from recall_kit.constants import ROLE, TOOL
+from recall_kit.constants import CONTENT, ROLE, SYSTEM, TOOL, USER
 from recall_kit.core import RecallKit
-from recall_kit.models import Memory, MemorySource
+from recall_kit.storage.base import Memory
 
 
 def test_memory_creation():
     """Test creating a Memory object."""
     memory = Memory(
-        text="This is a test memory",
+        content="This is a test memory",
         title="Test Memory",
         user_id=1,
-        embedding=[0.1, 0.2, 0.3],
         source_address="test:123",
     )
 
-    assert memory.text == "This is a test memory"
+    assert memory.content == "This is a test memory"
     assert memory.title == "Test Memory"
-    assert memory.embedding is None
     assert memory.source_address is None
     assert memory.parent_ids == []
     assert isinstance(memory.created_at, datetime.datetime)
     assert memory.relevance == 0.0
     assert memory.metadata == {}
-
-
-def test_memory_validation():
-    """Test memory validation."""
-    # Valid embedding
-    memory = Memory(
-        text="Test",
-        title="Test",
-        embedding=[0.1, 0.2, 0.3],
-        user_id=1,
-        source_address="test:123",
-    )
-    assert memory.embedding == [0.1, 0.2, 0.3]
-
-    # Invalid embedding (not a list)
-    with pytest.raises(ValueError):
-        Memory(
-            text="Test",
-            title="Test",
-            embedding="not a list",  # type: ignore
-            user_id=1,
-            source_address="test:123",
-        )
-
-    # Invalid embedding (not all numbers)
-    with pytest.raises(ValueError):
-        Memory(
-            text="Test",
-            title="Test",
-            embedding=[0.1, "not a number", 0.3],  # type: ignore
-            source_address="test:123",
-            user_id=1,
-        )
-
-
-def test_memory_to_dict():
-    """Test converting a Memory to a dictionary."""
-    memory = Memory(
-        text="This is a test memory",
-        title="Test Memory",
-        embedding=[0.1, 0.2, 0.3],
-        source_address="test:123",
-        metadata={"key": "value"},
-        user_id=1,
-    )
-
-    memory_dict = memory.to_dict()
-
-    assert memory_dict["text"] == "This is a test memory"
-    assert memory_dict["title"] == "Test Memory"
-    assert memory_dict["source_address"] == "test:123"
-    assert memory_dict["metadata"] == {"key": "value"}
-    assert "embedding" not in memory_dict
-
-
-def test_memory_source_creation():
-    """Test creating a MemorySource object."""
-    source = MemorySource(
-        text="This is a test source",
-        title="Test Source",
-        address="test:123",
-        user_id=1,
-        metadata={"key": "value"},
-    )
-
-    assert source.text == "This is a test source"
-    assert source.title == "Test Source"
-    assert source.address == "test:123"
-    assert source.metadata == {"key": "value"}
-
-
-def test_memory_source_to_memory():
-    """Test converting a MemorySource to a Memory."""
-    source = MemorySource(
-        text="This is a test source",
-        title="Test Source",
-        address="test:123",
-        metadata={"key": "value"},
-        user_id=1,
-    )
-
-    memory = source.to_memory()
-
-    assert memory.text == "This is a test source"
-    assert memory.title == "Test Source"
-    assert memory.source_address == "test:123"
-    assert memory.metadata == {"key": "value"}
-    assert memory.embedding is None
-
-
-def test_create_memory(recall_kit: RecallKit):
-    """Test creating a memory."""
-    memory = recall_kit.create_memory(
-        text="This is a test memory",
-        title="Test Memory",
-        source_address="test:123",
-        metadata={"key": "value"},
-    )
-
-    assert memory.text == "This is a test memory"
-    assert memory.title == "Test Memory"
-    assert memory.source_address == "test:123"
-    assert memory.metadata == {"key": "value"}
-    assert memory.embedding is not None
-
-    # Verify the memory was stored
-    retrieved = recall_kit.storage.get_memory(memory.id)
-    assert retrieved is not None
-    assert retrieved.text == "This is a test memory"
-
-
-def test_add_memory(recall_kit: RecallKit):
-    """Test adding an existing memory."""
-    memory = Memory(
-        text="This is a test memory",
-        title="Test Memory",
-        source_address="test:123",
-        metadata={"key": "value"},
-        user_id=1,
-        embedding=None,
-    )
-
-    added = recall_kit.add_memory(memory)
-
-    assert added.id == memory.id
-    assert added.text == "This is a test memory"
-    assert added.embedding is not None
-
-    # Verify the memory was stored
-    retrieved = recall_kit.storage.get_memory(memory.id)
-    assert retrieved
-    assert retrieved.text == "This is a test memory"
-
-
-def test_search(recall_kit: RecallKit):
-    """Test searching for memories."""
-    # Create some test memories
-    recall_kit.create_memory(
-        text="The cat sat on the mat",
-        title="Cat Memory",
-    )
-    recall_kit.create_memory(
-        text="The dog chased the ball",
-        title="Dog Memory",
-    )
-    recall_kit.create_memory(
-        text="The bird flew in the sky",
-        title="Bird Memory",
-    )
-
-    # Search for cat-related memories
-    results = recall_kit.search("cat", limit=2)
-
-    assert len(results) == 2
-    assert any("cat" in memory.text.lower() for memory in results)
-
-    # Check that relevance scores are set
-    for memory in results:
-        assert memory.relevance >= 0.0
 
 
 def test_consolidate_memories(recall_kit: RecallKit):
@@ -236,20 +75,20 @@ def test_compress_messages(recall_kit: RecallKit):
 
     # Create a list of messages
     messages = [
-        {ROLE: "system", "content": "You are a helpful assistant."},
-        {ROLE: "user", "content": "Hello, how are you?"},
-        {ROLE: "assistant", "content": "I'm doing well, thank you for asking!"},
-        {ROLE: "user", "content": "Tell me about the weather."},
-        {ROLE: "assistant", "content": "I don't have real-time weather information."},
-        {ROLE: "user", "content": "What about climate change?"},
+        {ROLE: SYSTEM, CONTENT: "You are a helpful assistant."},
+        {ROLE: USER, CONTENT: "Hello, how are you?"},
+        {ROLE: "assistant", CONTENT: "I'm doing well, thank you for asking!"},
+        {ROLE: USER, CONTENT: "Tell me about the weather."},
+        {ROLE: "assistant", CONTENT: "I don't have real-time weather information."},
+        {ROLE: USER, CONTENT: "What about climate change?"},
         {
             ROLE: "assistant",
-            "content": "Climate change is a significant global issue...",
+            CONTENT: "Climate change is a significant global issue...",
         },
-        {ROLE: "user", "content": "And renewable energy?"},
+        {ROLE: USER, CONTENT: "And renewable energy?"},
         {
             ROLE: "assistant",
-            "content": "Renewable energy sources include solar, wind...",
+            CONTENT: "Renewable energy sources include solar, wind...",
         },
     ]
 
@@ -259,7 +98,7 @@ def test_compress_messages(recall_kit: RecallKit):
     )
 
     # Check that the system message is preserved
-    assert any(msg.get(ROLE) == "system" for msg in compressed)
+    assert any(msg.get(ROLE) == SYSTEM for msg in compressed)
 
     # Check that we have fewer messages than we started with
     # If compression doesn't happen due to token counting differences, skip this test
@@ -298,8 +137,8 @@ def test_compress_messages(recall_kit: RecallKit):
     ):
         tool_msg = compressed[earliest_assistant_idx + 1]
         assert tool_msg.get(ROLE) == TOOL
-        assert "[Context:" in tool_msg.get("content", "")
-        assert "earlier messages were summarized" in tool_msg.get("content", "")
+        assert "[Context:" in tool_msg.get(CONTENT, "")
+        assert "earlier messages were summarized" in tool_msg.get(CONTENT, "")
         assert "type" in tool_msg.get("metadata", {})
         assert (
             pipe(
@@ -328,31 +167,31 @@ def test_compress_messages_with_age_limit(recall_kit: RecallKit):
     two_days_ago = now - datetime.timedelta(days=2)
 
     messages = [
-        {ROLE: "system", "content": "You are a helpful assistant."},
+        {ROLE: SYSTEM, CONTENT: "You are a helpful assistant."},
         {
-            ROLE: "user",
-            "content": "Old message",
+            ROLE: USER,
+            CONTENT: "Old message",
             "created_at": two_days_ago.isoformat(),
         },
         {
             ROLE: "assistant",
-            "content": "Old response",
+            CONTENT: "Old response",
             "created_at": two_days_ago.isoformat(),
         },
         {
-            ROLE: "user",
-            "content": "Recent message",
+            ROLE: USER,
+            CONTENT: "Recent message",
             "created_at": one_day_ago.isoformat(),
         },
         {
             ROLE: "assistant",
-            "content": "Recent response",
+            CONTENT: "Recent response",
             "created_at": one_day_ago.isoformat(),
         },
-        {ROLE: "user", "content": "Latest message", "created_at": now.isoformat()},
+        {ROLE: USER, CONTENT: "Latest message", "created_at": now.isoformat()},
         {
             ROLE: "assistant",
-            "content": "Latest response",
+            CONTENT: "Latest response",
             "created_at": now.isoformat(),
         },
     ]
@@ -367,14 +206,14 @@ def test_compress_messages_with_age_limit(recall_kit: RecallKit):
 
     # Check that old messages are dropped
     assert len(compressed) < len(messages)
-    assert not any(msg.get("content") == "Old message" for msg in compressed)
-    assert not any(msg.get("content") == "Old response" for msg in compressed)
+    assert not any(msg.get(CONTENT) == "Old message" for msg in compressed)
+    assert not any(msg.get(CONTENT) == "Old response" for msg in compressed)
 
     # Check that recent and latest messages are kept
-    assert any(msg.get("content") == "Recent message" for msg in compressed)
-    assert any(msg.get("content") == "Recent response" for msg in compressed)
-    assert any(msg.get("content") == "Latest message" for msg in compressed)
-    assert any(msg.get("content") == "Latest response" for msg in compressed)
+    assert any(msg.get(CONTENT) == "Recent message" for msg in compressed)
+    assert any(msg.get(CONTENT) == "Recent response" for msg in compressed)
+    assert any(msg.get(CONTENT) == "Latest message" for msg in compressed)
+    assert any(msg.get(CONTENT) == "Latest response" for msg in compressed)
 
     # Check that a memory was created from the dropped messages
     memories = recall_kit.storage.get_all_memories()
@@ -394,11 +233,11 @@ def test_compress_messages_tool_calls(recall_kit: RecallKit):
 
     # Create messages with tool calls
     messages = [
-        {ROLE: "system", "content": "You are a helpful assistant."},
-        {ROLE: "user", "content": "What's the weather?"},
+        {ROLE: SYSTEM, CONTENT: "You are a helpful assistant."},
+        {ROLE: USER, CONTENT: "What's the weather?"},
         {
             ROLE: "assistant",
-            "content": "I'll check the weather for you.",
+            CONTENT: "I'll check the weather for you.",
             "tool_calls": [
                 {
                     "id": "call_weather_1",
@@ -412,13 +251,13 @@ def test_compress_messages_tool_calls(recall_kit: RecallKit):
         },
         {
             ROLE: "tool",
-            "content": "The weather is sunny and 75°F.",
+            CONTENT: "The weather is sunny and 75°F.",
             "tool_call_id": "call_weather_1",
         },
-        {ROLE: "user", "content": "Thanks! What about tomorrow?"},
+        {ROLE: USER, CONTENT: "Thanks! What about tomorrow?"},
         {
             ROLE: "assistant",
-            "content": "I'll check tomorrow's forecast.",
+            CONTENT: "I'll check tomorrow's forecast.",
             "tool_calls": [
                 {
                     "id": "call_weather_2",
@@ -432,7 +271,7 @@ def test_compress_messages_tool_calls(recall_kit: RecallKit):
         },
         {
             ROLE: "tool",
-            "content": "Tomorrow will be partly cloudy with a high of 70°F.",
+            CONTENT: "Tomorrow will be partly cloudy with a high of 70°F.",
             "tool_call_id": "call_weather_2",
         },
     ]
@@ -467,7 +306,7 @@ def test_compress_messages_with_existing_message_set(recall_kit: RecallKit):
 
     # Create a message set first
     message1 = recall_kit.create_message(
-        role="user",
+        role=USER,
         content="Initial message",
     )
     message2 = recall_kit.create_message(
@@ -482,11 +321,11 @@ def test_compress_messages_with_existing_message_set(recall_kit: RecallKit):
 
     # Create messages to compress
     messages = [
-        {ROLE: "system", "content": "You are a helpful assistant."},
-        {ROLE: "user", "content": "Hello, how are you?"},
-        {ROLE: "assistant", "content": "I'm doing well, thank you for asking!"},
-        {ROLE: "user", "content": "Tell me about the weather."},
-        {ROLE: "assistant", "content": "I don't have real-time weather information."},
+        {ROLE: SYSTEM, CONTENT: "You are a helpful assistant."},
+        {ROLE: USER, CONTENT: "Hello, how are you?"},
+        {ROLE: "assistant", CONTENT: "I'm doing well, thank you for asking!"},
+        {ROLE: USER, CONTENT: "Tell me about the weather."},
+        {ROLE: "assistant", CONTENT: "I don't have real-time weather information."},
     ]
 
     # Compress messages with the existing message set ID

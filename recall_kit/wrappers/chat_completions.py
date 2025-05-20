@@ -46,7 +46,7 @@ def memory_augmented(recall_kit, max_memories: int = 5) -> CompletionFunction:
 
         return cast(CompletionFunction, wrapper)
 
-    return decorator
+    return cast(CompletionFunction, decorator)
 
 
 def ensure_corret_tool_messages(
