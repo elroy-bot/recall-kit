@@ -49,7 +49,7 @@ def memory_augmented(recall_kit, max_memories: int = 5) -> CompletionFunction:
     return decorator
 
 
-def ensure_correct_tool_messages(
+def ensure_corret_tool_messages(
     completion_fn: CompletionFunction,
 ) -> CompletionFunction:
     """
