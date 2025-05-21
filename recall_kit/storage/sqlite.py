@@ -15,14 +15,7 @@ from litellm import AllMessageValues
 from sqlmodel import Session, SQLModel, create_engine, desc, select
 
 from recall_kit.protocols import StorageBackendProtocol
-from recall_kit.storage.base import (
-    Embedding,
-    Memory,
-    Message,
-    MessageSet,
-    User,
-    serialize_json_field,
-)
+from recall_kit.storage.base import Embedding, Memory, Message, MessageSet, User
 
 from ..utils.embedding import embedding_to_bytes
 
@@ -188,12 +181,6 @@ class SQLiteBackend:
         Args:
             memory: The Memory object to store
         """
-        # Convert parent_ids list to JSON string
-        parent_ids_json = serialize_json_field(memory.parent_ids)
-
-        # Convert metadata dict to JSON string
-        meta_data_json = serialize_json_field(memory.source_metadata)
-
         # Ensure user_id is set
         if not hasattr(memory, "user_id") or memory.user_id is None:
             memory.user_id = self.get_default_user_id()
@@ -204,9 +191,9 @@ class SQLiteBackend:
             content=memory.content,
             title=memory.title,
             source_address=memory.source_address,
-            _parent_ids=parent_ids_json,
+            _parent_ids=memory._parent_ids,
             created_at=memory.created_at,
-            _source_metadata=meta_data_json,
+            _source_metadata=memory._source_metadata,
             active=memory.active,
             user_id=memory.user_id,
         )
@@ -370,7 +357,7 @@ class SQLiteBackend:
         """
 
         # Create SQLModel object
-        stored_message = Message(_data=json.dumps(message))
+        stored_message = Message(data_str=json.dumps(message))
         # Insert or update in database
         with Session(self.engine) as session:
             session.merge(stored_message)
@@ -405,32 +392,18 @@ class SQLiteBackend:
             message_set: The MessageSet object to store
         """
         # Convert message_ids list to JSON string
-        message_ids_json = json.dumps(message_set.message_ids)
-
-        # Convert metadata dict to JSON string
-        meta_data_json = serialize_json_field(message_set.metadata)
 
         # Ensure user_id is set
         if not hasattr(message_set, "user_id") or message_set.user_id is None:
             message_set.user_id = self.get_default_user_id()
 
-        # Create SQLModel object
-        stored_message_set = MessageSet(
-            id=message_set.id,
-            _message_ids=message_ids_json,
-            active=message_set.active,
-            created_at=message_set.created_at,
-            meta_data=meta_data_json,
-            user_id=message_set.user_id,
-        )
-
         # Insert or update in database
         with Session(self.engine) as session:
-            session.merge(stored_message_set)
+            session.merge(message_set)
             session.commit()
-            session.refresh(stored_message_set)
-            assert stored_message_set.id is not None, "Failed to store message set"
-            return stored_message_set.id
+            session.refresh(message_set)
+            assert message_set.id is not None, "Failed to store message set"
+            return message_set.id
 
     def get_message_set(self, message_set_id: int) -> Optional[MessageSet]:
         """

@@ -201,9 +201,8 @@ class RecallKit:
         assert isinstance(user_id, int), "user_id must be an integer"
 
         message_set = MessageSet(
-            _message_ids=json.dumps(message_ids),
+            message_ids_str=json.dumps(message_ids),
             active=active,
-            meta_data=json.dumps(meta_data or {}),
             user_id=user_id,
         )
 
@@ -375,7 +374,7 @@ class RecallKit:
                 # Add tool_calls to the assistant message
                 if "tool_calls" not in earliest_assistant_msg.data:
                     data = earliest_assistant_msg.data
-                    data["tool_calls"] = [
+                    data["tool_calls"] = [  # ty[e: ignore]
                         {
                             "id": tool_call_id,
                             "type": "function",

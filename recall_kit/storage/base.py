@@ -119,48 +119,35 @@ class Embedding(SQLModel, table=True):
 class Message(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     created_at: datetime.datetime = Field(default_factory=datetime.datetime.now)
-    _data: str = Field(default="")
+    data_str: str = Field(default="")
 
     @property
     def data(self) -> AllMessageValues:
         """Deserialize text column to AllMessageValues"""
-        return json.loads(self._data)
+        return json.loads(self.data_str)
 
     @data.setter
     def data(self, value: AllMessageValues) -> None:
         """Serialize AllMessageValues to the text column"""
         assert isinstance(value, dict), "data must be a dictionary"
-        self._data = json.dumps(value)
+        self.data_str = json.dumps(value)
 
 
 class MessageSet(SQLModel, table=True):
     """SQLModel for the message_sets table."""
 
     id: Optional[int] = Field(default=None, primary_key=True)
-    _message_ids: str  # JSON string of message IDs
+    message_ids_str: str  # JSON string of message IDs
     active: bool = Field(default=True)
     created_at: datetime.datetime = Field(default_factory=datetime.datetime.now)
-    meta_data: Optional[str] = None  # JSON string of metadata
     user_id: int
 
     @property
     def message_ids(self) -> List[int]:
-        if not self._message_ids:
+        if not self.message_ids_str:
             return []
         else:
-            return json.loads(self._message_ids)
-
-
-# Shared utility functions for storage backends
-def parse_json_field(json_str: Optional[str]) -> Any:
-    """Parse a JSON string field from the database."""
-    if not json_str:
-        return {}
-    try:
-        return json.loads(json_str)
-    except json.JSONDecodeError:
-        logger.warning(f"Failed to parse JSON: {json_str}")
-        return {}
+            return json.loads(self.message_ids_str)
 
 
 def serialize_json_field(data: Any) -> Optional[str]:
