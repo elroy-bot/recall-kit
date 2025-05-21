@@ -13,8 +13,7 @@ from typing import List, Optional, Protocol, Unpack, runtime_checkable
 from litellm import ModelResponse  # type: ignore
 from litellm import AllMessageValues, ChatCompletionRequest, Type  # type: ignore
 
-from ..models.memory import Memory
-from ..storage.base import Embedding, MessageSet
+from recall_kit.models import Embedding, Memory, MessageSet
 
 
 # Define type protocols for the callback functions

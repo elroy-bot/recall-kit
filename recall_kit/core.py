@@ -11,15 +11,17 @@ from __future__ import annotations
 import datetime
 import json
 from functools import partial
-from typing import Any, Deque, Dict, List, Optional, Type, TypeVar
+from typing import Any, Deque, Dict, List, Optional, TypeVar
 
 from litellm import AllMessageValues, ChatCompletionRequest
 from toolz import pipe
 
+from recall_kit.models import Memory, Message, MessageSet
+from recall_kit.plugins import registry
+
 from .constants import CONTENT, ROLE, TOOL
 from .services.embedding import EmbeddingService
 from .services.memory import MemoryService
-from .storage.base import Memory, Message, MessageSet
 from .utils.messaging import to_tool_message
 
 # Type variable for the RecallKit class
@@ -49,14 +51,14 @@ class RecallKit:
 
     def __init__(
         self,
-        embedding_model: str,
-        storage: StorageBackendProtocol,
-        embedding_fn: EmbeddingFunction,
-        completion_fn: CompletionFunction,
-        retrieve_fn: RetrieveFunction,
-        filter_fn: FilterFunction,
-        rerank_fn: RerankFunction,
-        augment_fn: AugmentFunction,
+        embedding_model: Optional[str] = None,
+        storage: Optional[StorageBackendProtocol] = None,
+        embedding_fn: Optional[EmbeddingFunction] = None,
+        completion_fn: Optional[CompletionFunction] = None,
+        retrieve_fn: Optional[RetrieveFunction] = None,
+        filter_fn: Optional[FilterFunction] = None,
+        rerank_fn: Optional[RerankFunction] = None,
+        augment_fn: Optional[AugmentFunction] = None,
     ):
         """
         Initialize a new RecallKit instance.
@@ -70,67 +72,27 @@ class RecallKit:
             rerank_fn: Function for reranking memories
             augment_fn: Function for augmenting requests with memories
         """
+        self.embedding_model = embedding_model or "text-embedding-3-small"
+
         # Set up storage backend
-        self.storage = storage
+        self.storage = storage or registry.get_storage_backend("default")
 
         # Set up embedding and completion functions
-        self.embedding_fn = embedding_fn
-        self.completion = completion_fn
+        self.embedding_fn = embedding_fn or registry.get_embedding_fn("default")
+        self.completion = completion_fn or registry.get_completion_fn("default")
 
         # Set up custom functions
-        self.retrieve_fn = retrieve_fn
-        self.filter_fn = filter_fn
-        self.rerank_fn = rerank_fn
-        self.augment_fn = augment_fn
+        self.retrieve_fn = retrieve_fn or registry.get_retrieve_fn("default")
+        self.filter_fn = filter_fn or registry.get_filter_fn("default")
+        self.rerank_fn = rerank_fn or registry.get_rerank_fn("default")
+        self.augment_fn = augment_fn or registry.get_augment_fn("default")
 
         self.embedding_service = EmbeddingService(
-            storage, embedding_fn, embedding_model
+            self.storage, self.embedding_fn, self.embedding_model
         )
 
         self.memory_store = MemoryService(
-            storage=storage, embedding_service=self.embedding_service
-        )
-
-    @classmethod
-    def create(
-        cls: Type[T],
-        embedding_model: str,
-        storage: Optional[StorageBackendProtocol] = None,
-        embedding_fn: Optional[EmbeddingFunction] = None,
-        completion_fn: Optional[CompletionFunction] = None,
-        retrieve_fn: Optional[RetrieveFunction] = None,
-        filter_fn: Optional[FilterFunction] = None,
-        rerank_fn: Optional[RerankFunction] = None,
-        augment_fn: Optional[AugmentFunction] = None,
-    ) -> T:
-        """
-        Create a RecallKit instance with optional parameters.
-
-        Any parameters not provided will use default implementations from plugins.
-
-        Args:
-            storage: Storage backend instance (optional)
-            embedding_fn: Function for text embeddings (optional)
-            completion_fn: Function for LLM completions (optional)
-            retrieve_fn: Function for retrieving memories (optional)
-            filter_fn: Function for filtering memories (optional)
-            rerank_fn: Function for reranking memories (optional)
-            augment_fn: Function for augmenting requests with memories (optional)
-
-        Returns:
-            A new RecallKit instance
-        """
-        from recall_kit.plugins import registry
-
-        return cls(
-            embedding_model=embedding_model,
-            storage=storage or registry.get_storage_backend("default"),
-            embedding_fn=embedding_fn or registry.get_embedding_fn("default"),
-            completion_fn=completion_fn or registry.get_completion_fn("default"),
-            retrieve_fn=retrieve_fn or registry.get_retrieve_fn("default"),
-            filter_fn=filter_fn or registry.get_filter_fn("default"),
-            rerank_fn=rerank_fn or registry.get_rerank_fn("default"),
-            augment_fn=augment_fn or registry.get_augment_fn("default"),
+            storage=self.storage, embedding_service=self.embedding_service
         )
 
     def get_relevant_memories(self, request: ChatCompletionRequest) -> List[Memory]:
@@ -208,18 +170,6 @@ class RecallKit:
 
         # Store the message set
         return self.storage.store_message_set(message_set)
-
-    def get_message_set(self, message_set_id: int) -> Optional[MessageSet]:
-        """
-        Get a message set by ID.
-
-        Args:
-            message_set_id: The ID of the message set to retrieve
-
-        Returns:
-            The MessageSet object if found, None otherwise
-        """
-        return self.storage.get_message_set(message_set_id)
 
     def compress_messages(
         self,

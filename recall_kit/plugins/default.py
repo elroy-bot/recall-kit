@@ -14,8 +14,9 @@ from litellm.types.utils import EmbeddingResponse
 from toolz import pipe
 from toolz.curried import filter, map, take
 
+from recall_kit.models import Memory
+
 from ..constants import ASSISTANT, CONTENT, ROLE, USER
-from ..models.memory import Memory
 from ..protocols.base import EmbeddingFunction, StorageBackendProtocol
 from ..storage.sqlite import SQLiteBackend
 

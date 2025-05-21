@@ -5,7 +5,7 @@ This package provides storage backends for storing and retrieving memories,
 including SQLite backend and vector storage utilities.
 """
 
-from recall_kit.storage.base import Embedding, Memory, Message, MessageSet, User
+from recall_kit.models import Embedding, Memory, Message, MessageSet, User
 from recall_kit.storage.sqlite import SQLiteBackend
 
 __all__ = [

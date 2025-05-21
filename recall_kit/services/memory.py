@@ -1,7 +1,8 @@
 import json
 from typing import Any, Dict, List, Optional
 
-from ..models.memory import Memory
+from recall_kit.models import Memory
+
 from ..protocols.base import StorageBackendProtocol
 from .embedding import EmbeddingService
 

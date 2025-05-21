@@ -22,6 +22,7 @@ from typing import (
     get_type_hints,
 )
 
+from .constants import DEFAULT
 from .protocols.base import (
     AugmentFunction,
     CompletionFunction,
@@ -158,7 +159,7 @@ class PluginRegistry:
             for alias in aliases:
                 self._storage_backends[alias] = storage
 
-    def get_storage_backend(self, name: str) -> Optional[Type[StorageBackendProtocol]]:
+    def get_storage_backend(self, name: str = DEFAULT) -> Type[StorageBackendProtocol]:
         """
         Get a storage backend by name.
 
@@ -168,7 +169,7 @@ class PluginRegistry:
         Returns:
             The storage backend class, or None if not found
         """
-        return self._storage_backends.get(name)
+        return self._storage_backends[name]
 
     def register_embedding_fn(
         self,

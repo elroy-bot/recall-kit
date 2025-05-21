@@ -14,8 +14,8 @@ from typing import List, Optional
 from litellm import AllMessageValues
 from sqlmodel import Session, SQLModel, create_engine, desc, select
 
+from recall_kit.models import Embedding, Memory, Message, MessageSet, User
 from recall_kit.protocols import StorageBackendProtocol
-from recall_kit.storage.base import Embedding, Memory, Message, MessageSet, User
 
 from ..utils.embedding import embedding_to_bytes
 

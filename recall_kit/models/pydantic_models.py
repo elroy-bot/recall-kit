@@ -6,12 +6,9 @@ This module contains the Memory and MemorySource classes used throughout Recall 
 
 from __future__ import annotations
 
-import json
 from typing import Any, Dict
 
 from pydantic import BaseModel, Field
-
-from ..storage.base import Memory
 
 
 class MemorySource(BaseModel):
@@ -34,18 +31,3 @@ class MemorySource(BaseModel):
         default_factory=dict, description="Additional metadata about the source"
     )
     user_id: int = Field(..., description="ID of the user who owns this source")
-
-    def to_memory(self) -> Memory:
-        """
-        Convert this source to a Memory object.
-
-        Args:
-            user_id: ID of the user who owns this memory (defaults to 1)
-        """
-        return Memory(
-            content=self.text,
-            title=self.title,
-            source_address=self.address,
-            _source_metadata=json.dumps(self.metadata),
-            user_id=self.user_id,
-        )

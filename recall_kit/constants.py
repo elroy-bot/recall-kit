@@ -4,6 +4,7 @@ TOOL = "tool"
 SYSTEM = "system"
 
 
+DEFAULT = "default"
 ROLE = "role"
 CONTENT = "content"
 MESSAGES = "messages"

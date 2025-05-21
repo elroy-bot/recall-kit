@@ -3,8 +3,9 @@ from typing import List
 
 from litellm.exceptions import ContextWindowExceededError
 
+from recall_kit.models import Recallable
+
 from ..protocols.base import EmbeddingFunction, StorageBackendProtocol
-from ..storage.base import Recallable
 from ..utils.embedding import bytes_to_embedding
 
 

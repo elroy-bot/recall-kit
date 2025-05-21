@@ -11,8 +11,9 @@ from sklearn.cluster import DBSCAN
 from toolz import concat, pipe, unique
 from toolz.curried import map, take
 
+from recall_kit.models import Memory
+
 from ..constants import CONTENT, ROLE, USER
-from ..models.memory import Memory
 from ..protocols.base import (
     CompletionFunction,
     EmbeddingFunction,

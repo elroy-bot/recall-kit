@@ -5,9 +5,8 @@ import pytest
 from litellm import AllMessageValues
 
 from recall_kit.core import RecallKit
+from recall_kit.models import Embedding, Memory, Message, MessageSet
 from recall_kit.storage.sqlite import SQLiteBackend
-
-from ..recall_kit.storage.base import Memory, Message, MessageSet
 
 
 @pytest.fixture(scope="function")
@@ -29,7 +28,7 @@ def storage() -> Generator[SQLiteBackend, Any, None]:
 
 @pytest.fixture(scope="function")
 def recall_kit(storage):
-    yield RecallKit.create(storage)
+    yield RecallKit(storage=storage)
 
 
 # Mock embedding service for testing
@@ -61,6 +60,14 @@ class MockStorageBackend:
 
     def store_memory(self, memory):
         self._memories[memory.id] = memory
+
+    def get_active_memories(self):
+        return [memory for memory in self._memories.values() if memory.active]
+
+    def store_embedding(
+        self, model: str, source_type: str, source_id: int, embedding: List[float]
+    ):
+        pass
 
     def get_memory(self, memory_id):
         return self._memories.get(memory_id)
@@ -96,6 +103,13 @@ class MockStorageBackend:
         for message_set in self._message_sets.values():
             if message_set.active:
                 return message_set
+        return None
+
+    def fetch_embedding(
+        self, model: str, source_type: str, source_id: int
+    ) -> Optional[Embedding]:
+        """Fetch an embedding for a given source type and ID."""
+        # Mock implementation: return None
         return None
 
     def get_messages_in_set(self, message_set_id) -> List[AllMessageValues]:

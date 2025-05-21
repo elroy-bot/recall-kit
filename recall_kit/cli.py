@@ -68,9 +68,7 @@ def cli(
 
     # Initialize RecallKit with storage and default functions
     ctx.ensure_object(dict)
-    ctx.obj["recall"] = RecallKit.create(
-        embedding_model=embedding_model, storage=storage
-    )
+    ctx.obj["recall"] = RecallKit(embedding_model=embedding_model, storage=storage)
 
 
 @cli.command()

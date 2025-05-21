@@ -373,6 +373,7 @@ class PluginRegistry:
         Raises:
             TypeError: If augment_fn does not conform to AugmentFunction protocol
         """
+
         # Check if the function conforms to the AugmentFunction protocol
         _check_protocol_conformance(augment_fn, AugmentFunction)
 

@@ -14,6 +14,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from litellm import AllMessageValues, ModelResponse  # type: ignore
 
 from recall_kit import RecallKit
+from recall_kit.models import MessageSet
 
 from .api.routes import (
     create_chat_completion,
@@ -24,7 +25,6 @@ from .api.routes import (
     get_recall_kit,
     list_models,
 )
-from .storage.base import MessageSet
 
 # Set up logging
 logger = logging.getLogger(__name__)
