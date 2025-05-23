@@ -24,6 +24,7 @@ from .constants import CONTENT, ROLE, TOOL
 from .processors.memory import MemoryConsolidator
 from .services.embedding import EmbeddingService
 from .services.memory import MemoryService
+from .services.message_storage import MessageStorageService
 from .utils.messaging import to_tool_message
 
 # Type variable for the RecallKit class
@@ -89,6 +90,8 @@ class RecallKit:
         self.rerank_fn = rerank_fn or registry.get_rerank_fn("default")
         self.augment_fn = augment_fn or registry.get_augment_fn("default")
 
+        self.message_storage_service = MessageStorageService(storage=self.storage)
+
         self.memory_consolidator = MemoryConsolidator(
             embedding_model=self.embedding_model,
             storage=self.storage,
@@ -105,11 +108,17 @@ class RecallKit:
         )
 
     def completion(self, **request: Unpack[ChatCompletionRequest]) -> ModelResponse:
+        request_with_stored_messages = self.message_storage_service.get_stored_messages(
+            request
+        )
+
         return pipe(
-            self.retrieve_fn(self.storage, self.embedding_fn, request),
+            self.retrieve_fn(
+                self.storage, self.embedding_fn, request_with_stored_messages
+            ),
             self.filter_fn,
-            partial(self.rerank_fn, request),
-            partial(self.augment_fn, request),
+            partial(self.rerank_fn, request_with_stored_messages),
+            partial(self.augment_fn, request_with_stored_messages),
             lambda r: self.completion_fn(**r),
         )  # type: ignore
 
