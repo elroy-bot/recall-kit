@@ -11,12 +11,11 @@ import logging
 from typing import Any, Dict, List, Optional
 
 from fastapi import Depends, HTTPException
-from litellm.types.utils import ModelResponse
 from litellm import AllMessageValues, ChatCompletionRequest
-
-from ..models import MessageSet
+from litellm.types.utils import ModelResponse
 
 from ..core import RecallKit  # type: ignore
+from ..models import MessageSet
 from ..processors.memory import MemoryConsolidator
 from ..protocols.base import StorageBackendProtocol
 

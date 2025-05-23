@@ -366,6 +366,22 @@ class SQLiteBackend:
             assert stored_message.id is not None, "Failed to store message"
             return stored_message.id
 
+    def store_messages(self, messages: List[AllMessageValues]) -> List[int]:
+        """
+        Store multiple messages in the SQLite database.
+
+        Args:
+            messages: List of messages to store
+
+        Returns:
+            List of message IDs for the stored messages
+        """
+        message_ids = []
+        for message in messages:
+            message_id = self.store_message(message)
+            message_ids.append(message_id)
+        return message_ids
+
     def get_message(self, message_id: int) -> Optional[AllMessageValues]:
         """
         Retrieve a message by ID.
@@ -526,7 +542,7 @@ class SQLiteBackend:
             assert id
             return id
 
-    def get_user_by_token(self, token: str) -> Optional[int]:
+    def get_user_by_token(self, token: Optional[str]) -> Optional[int]:
         """
         Get a user ID by token.
 
@@ -536,6 +552,9 @@ class SQLiteBackend:
         Returns:
             The user ID if found, None otherwise
         """
+        if token is None:
+            return None
+
         with Session(self.engine) as session:
             statement = select(User).where(User.token == token)
             user = session.exec(statement).first()

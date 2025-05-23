@@ -89,6 +89,14 @@ class MockStorageBackend:
         self._messages[message.id] = message
         return message.id
 
+    def store_messages(self, messages: List[AllMessageValues]) -> List[int]:
+        """Store multiple messages and return their IDs."""
+        message_ids = []
+        for message in messages:
+            message_id = self.store_message(message)
+            message_ids.append(message_id)
+        return message_ids
+
     def get_message(self, message_id) -> AllMessageValues:
         return self._messages[message_id].data
 
@@ -132,8 +140,10 @@ class MockStorageBackend:
         self.next_user_id += 1
         return user_id
 
-    def get_user_by_token(self, token: str) -> Optional[int]:
+    def get_user_by_token(self, token: Optional[str]) -> Optional[int]:
         """Get the user ID for the given token."""
+        if token is None:
+            return None
         return self.users.get(token)
 
     def get_default_user_id(self) -> int:

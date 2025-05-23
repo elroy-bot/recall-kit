@@ -1,9 +1,9 @@
 import json
-from litellm import AllMessageValues, ChatCompletionRequest
 
+from litellm import ChatCompletionRequest
+
+from ..constants import MESSAGES, USER
 from ..models.sql_models import MessageSet
-
-from ..constants import DEFAULT, MESSAGES, USER, USER_ID
 from ..protocols.base import StorageBackendProtocol
 
 
@@ -17,7 +17,9 @@ class MessageStorageService:
         """
         self.storage = storage
 
-    def get_stored_messages(self, request: ChatCompletionRequest) -> ChatCompletionRequest:
+    def get_stored_messages(
+        self, request: ChatCompletionRequest
+    ) -> ChatCompletionRequest:
         """
         Get a message set.
 
@@ -28,31 +30,88 @@ class MessageStorageService:
             The message set
         """
 
-
-
-
-
-        # retrieve active message set for user
-        # if there is no active message set, create one with the messages in the request.
-        # if there is an active message set, retrieve it. Examine the messages in the request, and see if they match the messages in the active message set, starting from the oldest message in the incoming request.
-        # if an overlap is found, append the active message set to the messages from ithe incoming request.
-
-        # keep track of which messages were already persisted, and which have not been.
-        # persist the new messages, create a new message set, update the request, and return it.
-
-        # if there are mutliple messages in the request, examine each to
-
-
         active_message_set = self.storage.get_active_message_set()
 
-        user_id= self.storage.get_user_by_token(request.get(USER)) or self.storage.get_default_user_id()
+        user_id = (
+            self.storage.get_user_by_token(request.get(USER))
+            or self.storage.get_default_user_id()
+        )
 
         if not active_message_set:
             message_ids = self.storage.store_messages(request[MESSAGES])
-            message_set = self.storage.store_message_set(MessageSet(user_id=user_id, message_ids_str=json.dumps(message_ids)),)
+            message_set = self.storage.store_message_set(
+                MessageSet(user_id=user_id, message_ids_str=json.dumps(message_ids)),
+            )
             return request
         else:
-            # TODO: COMPLETE THE FUNCTION
+            # Get the messages from the active message set
+            # We already checked that active_message_set is not None
+            assert (
+                active_message_set is not None and active_message_set.id is not None
+            ), "Active message set or its ID is None"
+            active_messages = self.storage.get_messages_in_set(active_message_set.id)
 
+            # Get the incoming messages
+            incoming_messages = request[MESSAGES]
 
+            # Find overlap between active messages and incoming messages
+            # We'll check if the oldest incoming messages match with the most recent active messages
+            overlap_found = False
+            overlap_index = 0
 
+            # Try to find an overlap by comparing messages
+            for i in range(len(incoming_messages)):
+                if i >= len(active_messages):
+                    break
+
+                # Compare messages starting from the beginning of incoming messages
+                # with the end of active messages (most recent ones)
+                if json.dumps(incoming_messages[i]) == json.dumps(
+                    active_messages[-(len(incoming_messages) - i)]
+                ):
+                    overlap_found = True
+                    overlap_index = i
+                    break
+
+            if overlap_found:
+                # If overlap is found, we need to merge the messages
+                # Keep the messages that were already in the active set
+                # and add only the new messages from the incoming request
+                message_ids = json.loads(active_message_set.message_ids_str)
+
+                # Store only the new messages (those after the overlap)
+                new_messages = incoming_messages[overlap_index + 1 :]
+                if new_messages:
+                    new_message_ids = self.storage.store_messages(new_messages)
+                    message_ids.extend(new_message_ids)
+
+                # Create a new message set with all messages
+                self.storage.deactivate_all_message_sets()
+                message_set = self.storage.store_message_set(
+                    MessageSet(
+                        user_id=user_id,
+                        message_ids_str=json.dumps(message_ids),
+                        active=True,
+                    )
+                )
+
+                # Update the request with all messages
+                all_messages = active_messages + new_messages
+                request[MESSAGES] = all_messages
+            else:
+                # No overlap found, store all incoming messages as a new set
+                message_ids = self.storage.store_messages(incoming_messages)
+
+                # Deactivate all existing message sets
+                self.storage.deactivate_all_message_sets()
+
+                # Create a new active message set
+                self.storage.store_message_set(
+                    MessageSet(
+                        user_id=user_id,
+                        message_ids_str=json.dumps(message_ids),
+                        active=True,
+                    )
+                )
+
+            return request

@@ -41,7 +41,9 @@ class DefaultPlugin:
         Returns:
             List of relevant memories
         """
-        import pdb; pdb.set_trace()
+        import pdb
+
+        pdb.set_trace()
         return pipe(
             request.get("messages", []),
             filter(lambda m: m.get(ROLE) in [USER, ASSISTANT]),

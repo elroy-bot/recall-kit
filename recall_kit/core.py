@@ -11,17 +11,17 @@ from __future__ import annotations
 import datetime
 import json
 from functools import partial
-from typing import Any, Deque, Dict, List, Optional, TypeVar, Unpack
+from typing import Deque, List, Optional, TypeVar, Unpack
 
 from litellm import AllMessageValues, ChatCompletionRequest
-from toolz import pipe
 from litellm.types.utils import ModelResponse
+from toolz import pipe
 
-from recall_kit.models import Memory, Message, MessageSet
+from recall_kit.models import Message, MessageSet
 from recall_kit.plugins import registry
-from .processors.memory import MemoryConsolidator
 
-from .constants import CONTENT, MESSAGES, ROLE, TOOL
+from .constants import CONTENT, ROLE, TOOL
+from .processors.memory import MemoryConsolidator
 from .services.embedding import EmbeddingService
 from .services.memory import MemoryService
 from .utils.messaging import to_tool_message
@@ -89,7 +89,12 @@ class RecallKit:
         self.rerank_fn = rerank_fn or registry.get_rerank_fn("default")
         self.augment_fn = augment_fn or registry.get_augment_fn("default")
 
-        self.memory_consolidator = MemoryConsolidator(embedding_model=self.embedding_model, storage=self.storage, completion_fn=self.completion_fn, embedding_fn = self.embedding_fn,)
+        self.memory_consolidator = MemoryConsolidator(
+            embedding_model=self.embedding_model,
+            storage=self.storage,
+            completion_fn=self.completion_fn,
+            embedding_fn=self.embedding_fn,
+        )
 
         self.embedding_service = EmbeddingService(
             self.storage, self.embedding_fn, self.embedding_model
@@ -99,17 +104,14 @@ class RecallKit:
             storage=self.storage, embedding_service=self.embedding_service
         )
 
-
     def completion(self, **request: Unpack[ChatCompletionRequest]) -> ModelResponse:
-
         return pipe(
             self.retrieve_fn(self.storage, self.embedding_fn, request),
             self.filter_fn,
             partial(self.rerank_fn, request),
             partial(self.augment_fn, request),
             lambda r: self.completion_fn(**r),
-        ) # type: ignore
-
+        )  # type: ignore
 
     def create_message_set(
         self,
@@ -266,7 +268,7 @@ class RecallKit:
                     max_tokens=target_token_count,
                 )
                 .choices[0]
-                .message.content # type: ignore
+                .message.content  # type: ignore
             )  # type: ignore
 
             memory = self.memory_store.create_memory(
@@ -275,7 +277,7 @@ class RecallKit:
                 source_metadata=[
                     {
                         "source_type": MessageSet.__name__,
-                        "source_id": self.storage.get_active_message_set().id, # type: ignore
+                        "source_id": self.storage.get_active_message_set().id,  # type: ignore
                     },
                 ],
             )
@@ -325,7 +327,7 @@ class RecallKit:
 
                 # Insert the tool message after the earliest assistant message
                 if earliest_assistant_idx is not None:
-                    kept_messages.insert(earliest_assistant_idx + 1, tool_message) # type: ignore
+                    kept_messages.insert(earliest_assistant_idx + 1, tool_message)  # type: ignore
 
         # Construct the final message list
         result: List[Message] = list(kept_messages)
