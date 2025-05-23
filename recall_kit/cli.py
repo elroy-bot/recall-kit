@@ -86,14 +86,9 @@ def serve(ctx: click.Context, host: str, port: int, model: str):
     click.echo("Press Ctrl+C to stop the server.")
 
     # Import here to avoid requiring fastapi and uvicorn for non-server use
-    try:
-        import uvicorn
+    import uvicorn
 
-        from recall_kit.server import create_app
-    except ImportError:
-        click.echo("Error: FastAPI and uvicorn are required for the server.")
-        click.echo("Install them with: pip install 'recall-kit[mcp]'")
-        return
+    from recall_kit.server import create_app
 
     # Get the RecallKit instance from the context
     recall: RecallKit = ctx.obj["recall"]

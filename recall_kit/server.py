@@ -15,10 +15,12 @@ from litellm import AllMessageValues, ModelResponse  # type: ignore
 
 from recall_kit import RecallKit
 from recall_kit.models import MessageSet
+from .processors.memory import MemoryConsolidator
 
 from .api.routes import (
     create_chat_completion,
     get_active_message_set,
+    get_memory_consolidator,
     get_message,
     get_message_set,
     get_messages_in_set,
@@ -61,6 +63,7 @@ def create_app(
 
     # Override the get_recall_kit dependency
     app.dependency_overrides[get_recall_kit] = lambda: recall
+    app.dependency_overrides[get_memory_consolidator] = lambda: recall.memory_consolidator
 
     # Import litellm here to avoid requiring it for non-server use
     try:

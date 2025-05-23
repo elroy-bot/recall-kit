@@ -137,6 +137,9 @@ class StorageBackendProtocol(Protocol):
     def store_message(self, message: AllMessageValues) -> int:
         ...
 
+    def store_messages(self, messages: List[AllMessageValues]) -> List[int]:
+        ...
+
     def get_message(self, message_id: int) -> Optional[AllMessageValues]:
         ...
 
@@ -158,7 +161,7 @@ class StorageBackendProtocol(Protocol):
     def create_user(self, token: str) -> int:
         ...
 
-    def get_user_by_token(self, token: str) -> Optional[int]:
+    def get_user_by_token(self, token: Optional[str]) -> Optional[int]:
         ...
 
     def get_default_user_id(self) -> int:

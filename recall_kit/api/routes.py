@@ -11,13 +11,14 @@ import logging
 from typing import Any, Dict, List, Optional
 
 from fastapi import Depends, HTTPException
-from litellm import ModelResponse  # type: ignore
-from litellm import AllMessageValues, ChatCompletionRequest  # type: ignore
+from litellm.types.utils import ModelResponse
+from litellm import AllMessageValues, ChatCompletionRequest
+
+from ..models import MessageSet
 
 from ..core import RecallKit  # type: ignore
 from ..processors.memory import MemoryConsolidator
 from ..protocols.base import StorageBackendProtocol
-from ..storage.base import Message, MessageSet  # type: ignore
 
 # Set up logging
 logger = logging.getLogger(__name__)

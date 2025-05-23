@@ -32,6 +32,8 @@ dependencies = [
     "toolz",
     "scipy",
     "scikit-learn",
+    "fastapi>=0.100.0",
+    "uvicorn>=0.20.0",
 ]
 
 [project.optional-dependencies]
