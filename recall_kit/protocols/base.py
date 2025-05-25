@@ -11,11 +11,9 @@ from __future__ import annotations
 from typing import List, Optional, Protocol, Unpack, runtime_checkable
 
 from litellm import ModelResponse  # type: ignore
-from litellm import AllMessageValues, ChatCompletionRequest, Type  # type: ignore
+from litellm import AllMessageValues, ChatCompletionRequest  # type: ignore
 
 from recall_kit.models import Embedding, Memory, MessageSet
-
-from ..services.embedding import EmbeddingService
 
 
 # Define type protocols for the callback functions
@@ -24,7 +22,7 @@ class RetrieveFunction(Protocol):
     def __call__(
         self,
         storage: StorageBackendProtocol,
-        embedding_service: EmbeddingService,
+        embedding_fn: EmbeddingFunction,
         request: ChatCompletionRequest,
     ) -> List[Memory]:
         ...
