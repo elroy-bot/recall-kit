@@ -15,6 +15,8 @@ from litellm import AllMessageValues, ChatCompletionRequest, Type  # type: ignor
 
 from recall_kit.models import Embedding, Memory, MessageSet
 
+from ..services.embedding import EmbeddingService
+
 
 # Define type protocols for the callback functions
 @runtime_checkable
@@ -22,7 +24,7 @@ class RetrieveFunction(Protocol):
     def __call__(
         self,
         storage: StorageBackendProtocol,
-        embedding_fn: EmbeddingFunction,
+        embedding_service: EmbeddingService,
         request: ChatCompletionRequest,
     ) -> List[Memory]:
         ...

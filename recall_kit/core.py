@@ -5,6 +5,9 @@ This module contains the main classes and functions for working with memories,
 including the RecallKit class.
 """
 
+# search memory should:
+# retrieve, filter, rerank, consider whether fetching more sources is needed
+
 
 from __future__ import annotations
 
@@ -55,6 +58,7 @@ class RecallKit:
     def __init__(
         self,
         embedding_model: Optional[str] = None,
+        token_limit: int = 10000,
         storage: Optional[StorageBackendProtocol] = None,
         embedding_fn: Optional[EmbeddingFunction] = None,
         completion_fn: Optional[CompletionFunction] = None,

@@ -160,7 +160,7 @@ class SQLiteBackend:
             if existing_embedding:
                 # Update existing embedding
                 existing_embedding.embedding = embedding_bytes
-                session.merge(existing_embedding)
+                existing_embedding = session.merge(existing_embedding)
             else:
                 # Create new embedding record
                 embedding_table = Embedding(
@@ -357,10 +357,9 @@ class SQLiteBackend:
         """
 
         # Create SQLModel object
-        stored_message = Message(data_str=json.dumps(message))
         # Insert or update in database
         with Session(self.engine) as session:
-            session.merge(stored_message)
+            stored_message = session.merge(Message(data_str=json.dumps(message)))
             session.commit()
             session.refresh(stored_message)
             assert stored_message.id is not None, "Failed to store message"
@@ -415,7 +414,7 @@ class SQLiteBackend:
 
         # Insert or update in database
         with Session(self.engine) as session:
-            session.merge(message_set)
+            message_set = session.merge(message_set)
             session.commit()
             session.refresh(message_set)
             assert message_set.id is not None, "Failed to store message set"
