@@ -7,6 +7,7 @@ including retrieval, filtering, reranking, augmentation, embedding, and completi
 
 from __future__ import annotations
 
+from functools import partial
 from typing import List, Unpack
 
 from litellm import ChatCompletionRequest, ModelResponse  # type: ignore
@@ -27,6 +28,7 @@ class DefaultPlugin:
     @staticmethod
     def retrieve(
         storage: StorageBackendProtocol,
+        embedding_model: str,
         embedding_fn: EmbeddingFunction,
         request: ChatCompletionRequest,
     ) -> List[Memory]:
@@ -48,8 +50,7 @@ class DefaultPlugin:
             take(3),
             list,
             "\n".join,
-            embedding_fn,
-            take(1),
+            partial(embedding_fn, embedding_model),
             lambda e: storage.search_memories(e, limit=5),
             list,
         )
@@ -66,15 +67,7 @@ class DefaultPlugin:
         Returns:
             True if the memory should be included, False otherwise
         """
-        # Keep memories with relevance > 0.7
-        answers = []
-
-        for memory in memories:
-            if not hasattr(memory, "relevance"):
-                raise ValueError("Memory object does not have a 'relevance' attribute.")
-            elif getattr(memory, "relevance") > 0.7:
-                answers.append(memory)
-        return answers
+        return memories
 
     @staticmethod
     def rerank(request: ChatCompletionRequest, memories: List[Memory]) -> List[Memory]:
@@ -88,11 +81,8 @@ class DefaultPlugin:
         Returns:
             Reranked list of memories
         """
-        # Sort by relevance
 
-        if not hasattr(memories, "relevance"):
-            raise ValueError("Memory object does not have a 'relevance' attribute.")
-        return sorted(memories, key=lambda m: getattr(m, "relevance"), reverse=True)
+        return memories
 
     @staticmethod
     def augment(
@@ -134,7 +124,7 @@ class DefaultPlugin:
 
         from litellm import embedding as litellm_embedding
 
-        resp = litellm_embedding(model=model, texts=[text])
+        resp = litellm_embedding(model=model, input=[text])
         assert isinstance(resp, EmbeddingResponse)
 
         return resp.data[0]["embedding"]

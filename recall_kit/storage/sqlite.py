@@ -9,7 +9,7 @@ import json
 import logging
 import os
 import sqlite3
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 from litellm import AllMessageValues
 from sqlmodel import Session, SQLModel, create_engine, desc, select
@@ -128,11 +128,6 @@ class SQLiteBackend:
         except Exception as e:
             logger.error(f"Error checking for migration need: {e}")
 
-    def _create_mock_vector_fns(self, conn: sqlite3.Connection) -> None:
-        """Create mock vector functions for testing."""
-        # Create a mock cosine similarity function
-        conn.create_function("vss_cosine_similarity", 2, lambda a, b: 0.5)
-
     def get_active_memories(self) -> List[Memory]:
         with Session(self.engine) as session:
             return list(
@@ -217,6 +212,45 @@ class SQLiteBackend:
         with Session(self.engine) as session:
             return session.get(Memory, memory_id)
 
+    def get_memories_with_embeddings(self) -> List[Tuple[Memory, Embedding]]:
+        """
+        Retrieve all active memories with their corresponding embeddings.
+
+        Returns:
+            List of tuples containing (Memory, Embedding) pairs
+        """
+        # Get all active memories
+        active_memories = self.get_active_memories()
+
+        if not active_memories:
+            return []
+
+        # Extract memory IDs for efficient querying
+        memory_ids = [memory.id for memory in active_memories]
+
+        # Create a dictionary to map memory IDs to memory objects for quick lookup
+        memory_dict = {memory.id: memory for memory in active_memories}
+
+        result = []  # Initialize result outside the session block
+
+        # Fetch all embeddings for these memories in a single query
+        with Session(self.engine) as session:
+            # Get all embeddings for Memory type
+            embeddings = session.exec(
+                select(Embedding).where(
+                    Embedding.source_type == Memory.__name__,
+                    (Embedding.source_id.in_([int(id) for id in memory_ids])),  # type: ignore
+                )
+            )
+
+            # Pair each memory with its corresponding embedding
+            for embedding in embeddings:
+                memory = memory_dict.get(embedding.source_id)
+                if memory:
+                    result.append((memory, embedding))
+
+        return result  # Return result outside the session block
+
     def search_memories(
         self, query_embedding: List[float], limit: int = 5
     ) -> List[Memory]:
@@ -230,40 +264,35 @@ class SQLiteBackend:
         Returns:
             List of Memory objects, sorted by relevance
         """
-        conn = self._get_connection()
-        cursor = conn.cursor()
-        memories = []
+        RELEVANCE_THRESHOLD = 0.7
 
-        # Convert query embedding to comma-separated string for sqlite-vec
-        query_str = ",".join(str(x) for x in query_embedding)
+        from ..utils.embedding import bytes_to_embedding, calculate_similarity
 
-        # Search using cosine similarity
-        cursor.execute(
-            """
-            SELECT m.id, vss_cosine_similarity(?, mi.embedding) as relevance
-            FROM memories_index mi
-            JOIN memories m ON mi.id = m.id
-            ORDER BY relevance DESC
-            LIMIT ?
-            """,
-            (query_str, limit),
-        )
+        memories_with_embeddings = self.get_memories_with_embeddings()
 
-        rows = cursor.fetchall()
+        if not memories_with_embeddings:
+            return []
 
-        # Get memory objects by ID and set relevance
-        with Session(self.engine) as session:
-            for row in rows:
-                memory_id = row["id"]
-                relevance = float(row["relevance"])
+        # Calculate similarity for each memory
+        memory_similarities = []
+        for memory, embedding in memories_with_embeddings:
+            # Convert embedding bytes to list of floats
+            embedding_vector = bytes_to_embedding(embedding.embedding)
 
-                stored_memory = session.get(Memory, memory_id)
-                if stored_memory:
-                    stored_memory.relevance = relevance
-                    memories.append(stored_memory)
+            # Calculate cosine similarity
+            similarity = calculate_similarity(query_embedding, embedding_vector)
 
-        conn.close()
-        return memories
+            # Store memory with its similarity score
+            memory_similarities.append((memory, similarity))
+
+        # Sort by similarity score (highest first)
+        memory_similarities.sort(key=lambda x: x[1], reverse=True)
+
+        return [
+            memory
+            for memory, _ in memory_similarities[:limit]
+            if _ > RELEVANCE_THRESHOLD
+        ]
 
     def update_memory(self, memory: Memory) -> None:
         """

@@ -1,12 +1,9 @@
-import logging
 from typing import List
-
-from litellm.exceptions import ContextWindowExceededError
 
 from recall_kit.models import Recallable
 
 from ..protocols.base import EmbeddingFunction, StorageBackendProtocol
-from ..utils.embedding import bytes_to_embedding
+from ..utils.embedding import bytes_to_embedding, truncate_if_context_exceeded
 
 
 class EmbeddingService:
@@ -24,32 +21,8 @@ class EmbeddingService:
             embedding_fn: The function to call for generating embeddings
         """
         self.storage = storage
-        self.embedding = embedding_fn
+        self.embedding = truncate_if_context_exceeded(embedding_fn)
         self.model = model
-
-    def calculate_embedding(self, text: str) -> List[float]:
-        """
-        Get embedding for text using litellm.
-
-        Args:
-            text: Text to embed
-            model: Embedding model to use
-
-        Returns:
-            List of float values representing the embedding
-        """
-        assert isinstance(text, str), "Text must be a string"
-
-        try:
-            return self.embedding(
-                model=self.model,
-                text=text,
-            ).data[  # type: ignore
-                0
-            ]["embedding"]
-        except ContextWindowExceededError:
-            logging.info("Context window exceeded, retrying with half the text")
-            return self.calculate_embedding(text[int(len(text) / 2) :])
 
     def upsert_embedding(self, recallable: Recallable) -> List[float]:
         """
@@ -69,7 +42,7 @@ class EmbeddingService:
             return bytes_to_embedding(existing_embedding.embedding)
 
         else:
-            calculated_embedding = self.calculate_embedding(recallable.to_text())
+            calculated_embedding = self.embedding(self.model, recallable.to_text())
             self.storage.store_embedding(
                 self.model, recallable.source_type, recallable.id, calculated_embedding
             )

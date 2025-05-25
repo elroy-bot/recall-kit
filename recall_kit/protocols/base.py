@@ -22,6 +22,7 @@ class RetrieveFunction(Protocol):
     def __call__(
         self,
         storage: StorageBackendProtocol,
+        embedding_model: str,
         embedding_fn: EmbeddingFunction,
         request: ChatCompletionRequest,
     ) -> List[Memory]:

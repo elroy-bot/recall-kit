@@ -94,14 +94,6 @@ class Memory(Recallable, table=True):
         """Set the parent IDs from a list of integers."""
         self._parent_ids = json.dumps(value)
 
-    @property
-    def relevance(self) -> Optional[float]:
-        return getattr(self, "_relevance")
-
-    @relevance.setter
-    def relevance(self, val: float) -> None:
-        setattr(self, "_relevance", val)
-
 
 class Embedding(SQLModel, table=True):
     """SQLModel for the embeddings table."""

@@ -108,7 +108,9 @@ class RecallKit:
         )
 
         self.memory_store = MemoryService(
-            storage=self.storage, embedding_service=self.embedding_service
+            storage=self.storage,
+            embedding_model=self.embedding_model,
+            embedding_fn=self.embedding_fn,
         )
 
     def completion(self, **request: Unpack[ChatCompletionRequest]) -> ModelResponse:
@@ -118,9 +120,12 @@ class RecallKit:
 
         return pipe(
             self.retrieve_fn(
-                self.storage, self.embedding_fn, request_with_stored_messages
+                self.storage,
+                self.embedding_model,
+                self.embedding_fn,
+                request_with_stored_messages,
             ),
-            self.filter_fn,
+            partial(self.filter_fn, request_with_stored_messages),
             partial(self.rerank_fn, request_with_stored_messages),
             partial(self.augment_fn, request_with_stored_messages),
             lambda r: self.completion_fn(**r),

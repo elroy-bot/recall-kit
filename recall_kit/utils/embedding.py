@@ -7,9 +7,43 @@ including conversion between different formats and vector operations.
 
 from __future__ import annotations
 
+import functools
+import logging
 from typing import List
 
 import numpy as np
+from litellm.exceptions import ContextWindowExceededError
+
+from ..protocols.base import EmbeddingFunction
+
+
+def truncate_if_context_exceeded(embedding_fn: EmbeddingFunction) -> EmbeddingFunction:
+    """
+    Decorator for embedding functions that adds error handling for context window exceeded errors.
+
+    This decorator wraps an embedding function to:
+    1. Validate that the input text is a string
+    2. Handle ContextWindowExceededError by retrying with half the text
+    3. Extract the embedding from the response structure
+
+    Args:
+        embedding_fn: The embedding function to wrap
+
+    Returns:
+        Wrapped function with error handling
+    """
+
+    @functools.wraps(embedding_fn)
+    def wrapper(model: str, text: str) -> List[float]:
+        assert isinstance(text, str), "Text must be a string"
+
+        try:
+            return embedding_fn(model, text)
+        except ContextWindowExceededError:
+            logging.info("Context window exceeded, retrying with half the text")
+            return wrapper(model, text[int(len(text) / 2) :])
+
+    return wrapper
 
 
 def calculate_similarity(embedding1: List[float], embedding2: List[float]) -> float:

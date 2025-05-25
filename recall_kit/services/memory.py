@@ -3,13 +3,15 @@ from typing import Any, Dict, List, Optional
 
 from recall_kit.models import Memory
 
-from ..protocols.base import StorageBackendProtocol
-from .embedding import EmbeddingService
+from ..protocols.base import EmbeddingFunction, StorageBackendProtocol
 
 
 class MemoryService:
     def __init__(
-        self, storage: StorageBackendProtocol, embedding_service: EmbeddingService
+        self,
+        storage: StorageBackendProtocol,
+        embedding_model: str,
+        embedding_fn: EmbeddingFunction,
     ):
         """
         Initialize a new MemoryStore instance.
@@ -18,7 +20,8 @@ class MemoryService:
             storage: The storage backend to use for memory management
         """
         self.storage = storage
-        self.embedding_service = embedding_service
+        self.embedding_fn = embedding_fn
+        self.embedding_model = embedding_model
 
     def create_memory(
         self,
@@ -76,5 +79,5 @@ class MemoryService:
             List of relevant Memory objects
         """
         return self.storage.search_memories(
-            self.embedding_service.calculate_embedding(query), limit=limit
+            self.embedding_fn(self.embedding_model, query), limit=limit
         )

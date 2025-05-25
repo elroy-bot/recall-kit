@@ -166,7 +166,7 @@ class MemoryConsolidator:
 
         clusters: List[MemoryCluster] = pipe(
             self.storage.get_active_memories(),
-            partial(self.find_clusters),
+            self.find_clusters,
             take(3),
             list,
         )  # type: ignore
@@ -208,8 +208,15 @@ class MemoryConsolidator:
                 self.storage.update_memory(memory)
 
     def find_clusters(
-        self, eps: float, max_samples: int, min_samples: int, memories: List[Memory]
+        self,
+        memories: List[Memory],
+        eps: float = 0.21125,
+        max_samples: int = 5,
+        min_samples: int = 3,
     ) -> List[MemoryCluster]:
+        if not memories:
+            return []
+
         embeddings = []
         valid_memories = []
         for memory in memories:
