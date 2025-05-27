@@ -1,4 +1,4 @@
-from .pydantic_models import MemorySource
+from .pydantic_models import SourceMetadata
 from .sql_models import Embedding, Memory, Message, MessageSet, Recallable, User
 
 __all__ = [
@@ -6,7 +6,7 @@ __all__ = [
     "MessageSet",
     "User",
     "Message",
-    "MemorySource",
+    "SourceMetadata",
     "Embedding",
     "Recallable",
 ]

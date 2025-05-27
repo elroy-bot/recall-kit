@@ -28,7 +28,7 @@ def storage() -> Generator[SQLiteBackend, Any, None]:
 
 @pytest.fixture(scope="function")
 def recall_kit(storage):
-    yield RecallKit(storage=storage)
+    yield RecallKit(storage=storage, user_token="default")
 
 
 # Mock embedding service for testing

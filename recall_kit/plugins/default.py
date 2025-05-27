@@ -8,7 +8,7 @@ including retrieval, filtering, reranking, augmentation, embedding, and completi
 from __future__ import annotations
 
 from functools import partial
-from typing import List, Unpack
+from typing import List, Optional, Unpack
 
 from litellm import ChatCompletionRequest, ModelResponse  # type: ignore
 from litellm.types.utils import EmbeddingResponse
@@ -56,7 +56,9 @@ class DefaultPlugin:
         )
 
     @staticmethod
-    def filter(request: ChatCompletionRequest, memories: List[Memory]) -> List[Memory]:
+    def filter(
+        request: Optional[ChatCompletionRequest], memories: List[Memory]
+    ) -> List[Memory]:
         """
         Default filter function.
 
@@ -70,7 +72,9 @@ class DefaultPlugin:
         return memories
 
     @staticmethod
-    def rerank(request: ChatCompletionRequest, memories: List[Memory]) -> List[Memory]:
+    def rerank(
+        request: Optional[ChatCompletionRequest], memories: List[Memory]
+    ) -> List[Memory]:
         """
         Default rerank function.
 

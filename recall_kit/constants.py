@@ -3,6 +3,8 @@ ASSISTANT = "assistant"
 TOOL = "tool"
 SYSTEM = "system"
 
+DEFAULT_USER_TOKEN = "default"
+
 
 DEFAULT = "default"
 ROLE = "role"

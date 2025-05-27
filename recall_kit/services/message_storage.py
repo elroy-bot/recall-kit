@@ -1,6 +1,7 @@
 import json
+from typing import List
 
-from litellm import ChatCompletionRequest
+from litellm import AllMessageValues, ChatCompletionRequest
 
 from ..constants import MESSAGES, USER
 from ..models.sql_models import MessageSet
@@ -8,7 +9,7 @@ from ..protocols.base import StorageBackendProtocol
 
 
 class MessageStorageService:
-    def __init__(self, storage: StorageBackendProtocol):
+    def __init__(self, storage: StorageBackendProtocol, user_id: int):
         """
         Initialize a new MessageStorageService instance.
 
@@ -16,6 +17,40 @@ class MessageStorageService:
             storage: The storage backend to use for message management
         """
         self.storage = storage
+        self.user_id = user_id
+
+    def set_conversation_messages(self, messages: List[AllMessageValues]) -> int:
+        return self.replace_active_message_set(self.storage.store_messages(messages))
+
+    def replace_active_message_set(self, message_ids: List[int]) -> int:
+        self.storage.deactivate_all_message_sets()
+        return self.storage.store_message_set(
+            MessageSet(
+                user_id=self.user_id,
+                message_ids_str=json.dumps(message_ids),
+                active=True,
+            )
+        )
+
+    def create_inactive_message_set(self, messages: List[AllMessageValues]) -> int:
+        """
+        Create a new inactive message set.
+
+        Args:
+            message_ids: List of message IDs to include in the set
+
+        Returns:
+            The ID of the newly created message set
+        """
+        message_ids = self.storage.store_messages(messages)
+
+        return self.storage.store_message_set(
+            MessageSet(
+                user_id=self.user_id,
+                message_ids_str=json.dumps(message_ids),
+                active=False,
+            )
+        )
 
     def get_stored_messages(
         self, request: ChatCompletionRequest
@@ -39,9 +74,7 @@ class MessageStorageService:
 
         if not active_message_set:
             message_ids = self.storage.store_messages(request[MESSAGES])
-            message_set = self.storage.store_message_set(
-                MessageSet(user_id=user_id, message_ids_str=json.dumps(message_ids)),
-            )
+            self.replace_active_message_set(message_ids=message_ids)
             return request
         else:
             # Get the messages from the active message set
@@ -77,7 +110,7 @@ class MessageStorageService:
                 # If overlap is found, we need to merge the messages
                 # Keep the messages that were already in the active set
                 # and add only the new messages from the incoming request
-                message_ids = json.loads(active_message_set.message_ids_str)
+                message_ids = active_message_set.message_ids
 
                 # Store only the new messages (those after the overlap)
                 new_messages = incoming_messages[overlap_index + 1 :]
@@ -85,15 +118,7 @@ class MessageStorageService:
                     new_message_ids = self.storage.store_messages(new_messages)
                     message_ids.extend(new_message_ids)
 
-                # Create a new message set with all messages
-                self.storage.deactivate_all_message_sets()
-                message_set = self.storage.store_message_set(
-                    MessageSet(
-                        user_id=user_id,
-                        message_ids_str=json.dumps(message_ids),
-                        active=True,
-                    )
-                )
+                self.replace_active_message_set(message_ids=message_ids)
 
                 # Update the request with all messages
                 all_messages = active_messages + new_messages
@@ -102,16 +127,7 @@ class MessageStorageService:
                 # No overlap found, store all incoming messages as a new set
                 message_ids = self.storage.store_messages(incoming_messages)
 
-                # Deactivate all existing message sets
-                self.storage.deactivate_all_message_sets()
-
                 # Create a new active message set
-                self.storage.store_message_set(
-                    MessageSet(
-                        user_id=user_id,
-                        message_ids_str=json.dumps(message_ids),
-                        active=True,
-                    )
-                )
+                self.replace_active_message_set(message_ids)
 
             return request

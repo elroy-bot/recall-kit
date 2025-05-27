@@ -1,9 +1,17 @@
 import json
-from typing import Any, Dict, List, Optional
+from typing import List, Optional
+
+from toolz import pipe
 
 from recall_kit.models import Memory
 
-from ..protocols.base import EmbeddingFunction, StorageBackendProtocol
+from ..models.pydantic_models import SourceMetadata
+from ..protocols.base import (
+    EmbeddingFunction,
+    FilterFunction,
+    RerankFunction,
+    StorageBackendProtocol,
+)
 
 
 class MemoryService:
@@ -12,6 +20,8 @@ class MemoryService:
         storage: StorageBackendProtocol,
         embedding_model: str,
         embedding_fn: EmbeddingFunction,
+        filter_fn: FilterFunction,
+        rerank_fn: RerankFunction,
     ):
         """
         Initialize a new MemoryStore instance.
@@ -22,13 +32,15 @@ class MemoryService:
         self.storage = storage
         self.embedding_fn = embedding_fn
         self.embedding_model = embedding_model
+        self.filter_fn = filter_fn
+        self.rerank_fn = rerank_fn
 
     def create_memory(
         self,
         text: str,
         title: Optional[str] = None,
         source_address: Optional[str] = None,
-        source_metadata: List[Dict[str, Any]] = [],
+        source_metadata: List[SourceMetadata] = [],
         user_id: Optional[int] = None,
     ) -> Memory:
         """
@@ -81,9 +93,13 @@ class MemoryService:
 
         self.storage.get_active_memories()
 
-        return self.storage.search_memories(
-            self.embedding_fn(self.embedding_model, query), limit=limit
-        )
+        return pipe(
+            self.embedding_fn(self.embedding_model, query),
+            lambda e: self.storage.search_memories(e, limit=limit),
+            lambda memories: self.filter_fn(None, memories),
+            lambda memories: self.rerank_fn(None, memories),
+            list,
+        )  # type: ignore
 
     def get_all_memories(self) -> List[Memory]:
         """
