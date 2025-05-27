@@ -11,24 +11,27 @@ including the RecallKit class.
 
 from __future__ import annotations
 
-import datetime
-import json
+import uuid
 from functools import partial
-from typing import Deque, List, Optional, TypeVar, Unpack
+from typing import Deque, List, Optional, Tuple, TypeVar, Unpack
 
 from litellm import AllMessageValues, ChatCompletionRequest
 from litellm.types.utils import ModelResponse
+from litellm.utils import token_counter
 from toolz import pipe
 
-from recall_kit.models import Message, MessageSet
+from recall_kit.models import MessageSet
 from recall_kit.plugins import registry
 
-from .constants import CONTENT, ROLE, TOOL
+from .constants import CONTENT, MESSAGES, MODEL, ROLE, TOOL
+from .models.pydantic_models import SourceMetadata
+from .models.sql_models import Memory
 from .processors.memory import MemoryConsolidator
 from .services.embedding import EmbeddingService
 from .services.memory import MemoryService
 from .services.message_storage import MessageStorageService
-from .utils.messaging import to_tool_message
+from .utils.completion import extract_content_from_response
+from .utils.messaging import to_tool_message, to_user_message
 
 # Type variable for the RecallKit class
 T = TypeVar("T", bound="RecallKit")
@@ -57,6 +60,7 @@ class RecallKit:
 
     def __init__(
         self,
+        user_token: str,
         embedding_model: Optional[str] = None,
         token_limit: int = 10000,
         storage: Optional[StorageBackendProtocol] = None,
@@ -79,10 +83,16 @@ class RecallKit:
             rerank_fn: Function for reranking memories
             augment_fn: Function for augmenting requests with memories
         """
+        self.token_limit = token_limit
+
         self.embedding_model = embedding_model or "text-embedding-3-small"
 
         # Set up storage backend
         self.storage = storage or registry.get_storage_backend("default")
+
+        self.user_id: int = self.storage.get_user_by_token(
+            user_token
+        ) or self.storage.create_user(user_token)
 
         # Set up embedding and completion functions
         self.embedding_fn = embedding_fn or registry.get_embedding_fn("default")
@@ -94,7 +104,9 @@ class RecallKit:
         self.rerank_fn = rerank_fn or registry.get_rerank_fn("default")
         self.augment_fn = augment_fn or registry.get_augment_fn("default")
 
-        self.message_storage_service = MessageStorageService(storage=self.storage)
+        self.message_storage_service = MessageStorageService(
+            storage=self.storage, user_id=self.user_id
+        )
 
         self.memory_consolidator = MemoryConsolidator(
             embedding_model=self.embedding_model,
@@ -108,15 +120,119 @@ class RecallKit:
         )
 
         self.memory_store = MemoryService(
+            filter_fn=self.filter_fn,
+            rerank_fn=self.rerank_fn,
             storage=self.storage,
             embedding_model=self.embedding_model,
             embedding_fn=self.embedding_fn,
         )
 
+    def remember_dropped_messages(
+        self, completion_model: str, messages: List[AllMessageValues]
+    ) -> Optional[Memory]:
+        """
+        Remember dropped messages by creating memories from them.
+
+        Args:
+            messages: List of messages to remember
+        """
+
+        if not messages:
+            return
+
+        messages = messages + [
+            to_user_message(
+                "The preceeding messages have been dropped from conversation context. Please summarize them in a single message."
+            )
+        ]
+
+        summary = extract_content_from_response(
+            self.completion_fn(model=completion_model, messages=messages)
+        )
+
+        message_set_id = self.message_storage_service.create_inactive_message_set(
+            messages
+        )
+
+        return self.memory_store.create_memory(
+            source_metadata=[
+                SourceMetadata(
+                    source_type=MessageSet.__name__, source_id=message_set_id
+                )
+            ],
+            text=summary,
+            user_id=self.user_id,
+        )
+
+    def insert_synthetic_tool_call(
+        self, messages: List[AllMessageValues], tool_name: str, tool_content: str
+    ) -> List[AllMessageValues]:
+        """
+        Insert a synthetic tool call into the messages. Tool call will be inserted after the first assistant message, and that assistant message will be updated to include the tool call.
+
+        Args:
+            messages: List of messages to insert the tool call into
+            tool_name: Name of the tool to call
+            tool_content: Content to pass to the tool
+        """
+
+        from recall_kit.constants import ASSISTANT
+
+        if not messages:
+            return messages
+
+        # Find the first assistant message
+        for i, msg in enumerate(messages):
+            if msg[ROLE] == ASSISTANT:
+                # Create a new tool message
+
+                # Update the assistant message to include the tool call
+
+                tool_call_id = f"c_{str(uuid.uuid4())}"
+                messages[i]["tool_calls"] = [  # type: ignore
+                    {
+                        "id": tool_call_id,
+                        "type": "function",
+                        "function": {"name": tool_name, "arguments": "{}"},
+                    }
+                ]
+
+                tool_message = to_tool_message(
+                    content=tool_content, tool_call_id=tool_call_id
+                )
+                messages.insert(i + 1, tool_message)
+                return messages
+        raise ValueError("No assistant message found to insert tool call into.")
+
     def completion(self, **request: Unpack[ChatCompletionRequest]) -> ModelResponse:
         request_with_stored_messages = self.message_storage_service.get_stored_messages(
             request
         )
+
+        token_count = token_counter(
+            request_with_stored_messages[MODEL],
+            messages=request_with_stored_messages[MESSAGES],
+        )
+
+        if token_count > self.token_limit:
+            kept_messages, dropped_messages = self.compress_messages(
+                model=request_with_stored_messages[MODEL],
+                messages=request_with_stored_messages[MESSAGES],
+            )
+
+            self.message_storage_service.set_conversation_messages(kept_messages)
+            new_memory = self.remember_dropped_messages(
+                request[MODEL], dropped_messages
+            )
+
+            if new_memory:
+                new_messages = self.insert_synthetic_tool_call(
+                    kept_messages, "get_convo_summary", new_memory.content
+                )
+                self.message_storage_service.set_conversation_messages(new_messages)
+            else:
+                new_messages = kept_messages
+            request_with_stored_messages[MESSAGES] = new_messages
 
         return pipe(
             self.retrieve_fn(
@@ -131,50 +247,11 @@ class RecallKit:
             lambda r: self.completion_fn(**r),
         )  # type: ignore
 
-    def create_message_set(
-        self,
-        message_ids: List[int],
-        active: bool = True,
-        user_id: Optional[int] = None,
-    ) -> int:
-        """
-        Create a new message set.
-
-        Args:
-            message_ids: List of message IDs in this set
-            active: Whether this message set is active
-            metadata: Additional metadata about the message set
-            user_id: ID of the user who owns this message set (defaults to default user if not provided)
-
-        Returns:
-            The created MessageSet object
-        """
-        # If this is an active message set, deactivate all other message sets
-        if active:
-            self.storage.deactivate_all_message_sets()
-
-        # Get default user_id if not provided
-        if user_id is None:
-            user_id = self.storage.get_default_user_id()
-
-        assert isinstance(user_id, int), "user_id must be an integer"
-
-        message_set = MessageSet(
-            message_ids_str=json.dumps(message_ids),
-            active=active,
-            user_id=user_id,
-        )
-
-        # Store the message set
-        return self.storage.store_message_set(message_set)
-
     def compress_messages(
         self,
         model: str,
-        messages: List[Message],
-        target_token_count: int = 4000,
-        max_message_age: Optional[datetime.timedelta] = None,
-    ) -> List[AllMessageValues]:
+        messages: List[AllMessageValues],
+    ) -> Tuple[List[AllMessageValues], List[AllMessageValues]]:
         """
         Compress messages to fit within the context window, by summarizing earlier messages.
 
@@ -186,12 +263,10 @@ class RecallKit:
             messages: List of messages to compress
             model: Model name to use for token counting
             target_token_count: Target number of tokens to keep
-            max_message_age: Maximum age of messages to keep (None means no limit)
 
         Returns:
            Compressed messages
         """
-        import datetime
         from collections import deque
 
         from litellm import token_counter  # type: ignore
@@ -199,28 +274,21 @@ class RecallKit:
         from recall_kit.constants import ASSISTANT, SYSTEM
 
         if not messages:
-            return []
+            return ([], [])
 
-        # Find system message if it exists
-        system_messages = [msg for msg in messages if msg.data[ROLE] == SYSTEM]
-        non_system_messages = [msg for msg in messages if msg.data[ROLE] != SYSTEM]
+        kept_messages: Deque[AllMessageValues] = deque()
+        dropped_messages: List[AllMessageValues] = []
 
-        # If no system message, we'll just work with all messages
-        if system_messages:
-            system_message = system_messages[0]
-            current_token_count = token_counter(
-                model=model, text=str(system_message.data.get(CONTENT, ""))
-            )
+        if messages[0][ROLE] == SYSTEM:
+            system_message = messages[0]
+            messages = messages[1:]  # Remove the system message from the main list
+            current_token_count = token_counter(model=model, messages=[system_message])
         else:
-            system_message = None
             current_token_count = 0
 
-        kept_messages: Deque[Message] = deque()
-        dropped_messages = []
-
         # Process messages in reverse order (newest first)
-        for msg in reversed(non_system_messages):
-            msg_content = str(msg.data.get(CONTENT, ""))
+        for msg in reversed(messages):
+            msg_content = str(msg.get(CONTENT, ""))
 
             # Calculate tokens for this message
             msg_token_count = token_counter(model=model, text=msg_content)
@@ -228,8 +296,8 @@ class RecallKit:
             # Check if we need to keep this message due to tool calls
             if (
                 len(kept_messages) > 0
-                and kept_messages[0].data[ROLE] == TOOL
-                and msg.data[ROLE] == ASSISTANT
+                and kept_messages[0][ROLE] == TOOL
+                and msg[ROLE] == ASSISTANT
             ):
                 # If the last message kept was a tool call, we must keep the corresponding assistant message
                 kept_messages.appendleft(msg)
@@ -237,140 +305,13 @@ class RecallKit:
                 continue
 
             # Check if we've exceeded our token budget
-            if current_token_count + msg_token_count > target_token_count:
+            if current_token_count + msg_token_count > self.token_limit / 2:
                 # This message would put us over the limit
                 dropped_messages.append(msg)
                 continue
-
-            # Check if the message is too old (if we have a max age)
-            if max_message_age and msg.created_at:
-                msg_created_at = msg.created_at
-                if isinstance(msg_created_at, str):
-                    msg_created_at = datetime.datetime.fromisoformat(msg_created_at)
-
-                if (
-                    msg_created_at
-                    and msg_created_at < datetime.datetime.now() - max_message_age
-                ):
-                    dropped_messages.append(msg)
-                    continue
 
             # If we get here, keep the message
             kept_messages.appendleft(msg)
             current_token_count += msg_token_count
 
-        # Create memories from dropped messages
-        if dropped_messages:
-            # Create a consolidated memory from the dropped messages
-            dropped_text = "\n".join(
-                [
-                    f"{msg[ROLE].upper()}: {msg.get('content', '')}"
-                    for msg in dropped_messages
-                ]
-            )
-
-            memory_text: str = (
-                self.completion_fn(
-                    model=model,
-                    messages=[
-                        {
-                            ROLE: SYSTEM,
-                            CONTENT: "You are a memory summarizer. Summarize the following messages.",
-                        },
-                        {
-                            ROLE: ASSISTANT,
-                            CONTENT: dropped_text,
-                        },
-                    ],
-                    temperature=0.0,
-                    max_tokens=target_token_count,
-                )
-                .choices[0]
-                .message.content  # type: ignore
-            )  # type: ignore
-
-            memory = self.memory_store.create_memory(
-                text=memory_text,
-                title="Summary of dropped messages",
-                source_metadata=[
-                    {
-                        "source_type": MessageSet.__name__,
-                        "source_id": self.storage.get_active_message_set().id,  # type: ignore
-                    },
-                ],
-            )
-
-            # Find the earliest kept assistant message to append the summary
-            earliest_assistant_msg: Optional[Message] = None
-            for msg in kept_messages:
-                if msg.data.get(ROLE) == ASSISTANT:
-                    earliest_assistant_msg = msg
-                    break
-
-            # If we found an assistant message, add a tool call and insert a tool results message
-            if earliest_assistant_msg:
-                # Create a new tool message with the summary
-                summary_content = f"[Context: {len(dropped_messages)} earlier messages were summarized: {memory.title}]"
-
-                # Create a tool message to insert after the earliest assistant message
-                import uuid
-
-                # Use a shorter prefix to ensure ID is under 40 characters
-                tool_call_id = f"c_{str(uuid.uuid4())}"
-
-                # Add tool_calls to the assistant message
-                if "tool_calls" not in earliest_assistant_msg.data:
-                    data = earliest_assistant_msg.data
-                    data["tool_calls"] = [  # type: ignore
-                        {
-                            "id": tool_call_id,
-                            "type": "function",
-                            "function": {"name": "get_summary", "arguments": "{}"},
-                        }
-                    ]
-
-                    # Need to create a NEW assistnat message in this scenario, and drop the existing assistant message
-
-                new_id = self.storage.store_message(
-                    to_tool_message(content=summary_content, tool_call_id=tool_call_id)
-                )
-                tool_message = self.storage.get_message(new_id)
-
-                # Find the index of the earliest assistant message
-                earliest_assistant_idx = None
-                for i, msg in enumerate(kept_messages):
-                    if msg is earliest_assistant_msg:
-                        earliest_assistant_idx = i
-                        break
-
-                # Insert the tool message after the earliest assistant message
-                if earliest_assistant_idx is not None:
-                    kept_messages.insert(earliest_assistant_idx + 1, tool_message)  # type: ignore
-
-        # Construct the final message list
-        result: List[Message] = list(kept_messages)
-        if system_message:
-            result.insert(0, system_message)
-
-        message_ids = []
-
-        for msg in result:
-            if msg.id is None:
-                message_ids.append(self.storage.store_message(msg.data))
-            else:
-                message_ids.append(msg.id)
-
-        # If we have an existing message set, mark it inactive
-        old_message_set = self.storage.get_active_message_set()
-
-        if old_message_set:
-            old_message_set.active = False
-            self.storage.store_message_set(old_message_set)
-
-            # Create a new active message set
-            self.create_message_set(
-                message_ids=message_ids,
-                active=True,
-            )
-
-        return [msg.data for msg in result]
+        return (list(kept_messages), dropped_messages)

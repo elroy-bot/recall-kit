@@ -33,7 +33,7 @@ class RetrieveFunction(Protocol):
 class FilterFunction(Protocol):
     def __call__(
         self,
-        request: ChatCompletionRequest,
+        request: Optional[ChatCompletionRequest],
         memories: List[Memory],
     ) -> List[Memory]:
         ...
@@ -43,7 +43,7 @@ class FilterFunction(Protocol):
 class RerankFunction(Protocol):
     def __call__(
         self,
-        request: ChatCompletionRequest,
+        request: Optional[ChatCompletionRequest],
         memories: List[Memory],
     ) -> List[Memory]:
         ...

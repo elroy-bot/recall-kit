@@ -15,6 +15,7 @@ from litellm import AllMessageValues
 from recall_kit import __version__
 from recall_kit.storage import SQLiteBackend
 
+from .constants import DEFAULT_USER_TOKEN
 from .core import RecallKit
 from .utils.completion import extract_content_from_response
 from .utils.messaging import to_assistant_message, to_system_message, to_user_message
@@ -71,7 +72,9 @@ def cli(
 
     # Initialize RecallKit with storage and default functions
     ctx.ensure_object(dict)
-    ctx.obj["recall"] = RecallKit(embedding_model=embedding_model, storage=storage)
+    ctx.obj["recall"] = RecallKit(
+        embedding_model=embedding_model, storage=storage, user_token=DEFAULT_USER_TOKEN
+    )
 
 
 @cli.command()
@@ -92,7 +95,6 @@ def remember(
     memory = recall.memory_store.create_memory(
         text=text,
         title=title or text[:50],
-        source_metadata=[{"tags": tags.split(",")}] if tags else [],
     )
 
     # Print the result
