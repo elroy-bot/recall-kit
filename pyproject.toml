@@ -3,12 +3,12 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "recall-kit"
+name = "recallkit"
 version = "0.0.2"
 description = "Lightweight memory integration for LLMs"
 readme = "README.md"
 authors = [
-    {name = "recall-kit contributors", email = "example@example.com"}
+    {name = "recallkit contributors", email = "example@example.com"}
 ]
 license = {text = "MIT"}
 classifiers = [
@@ -18,57 +18,29 @@ classifiers = [
 ]
 requires-python = ">=3.10"
 dependencies = [
-    "importlib-resources",
-    "pydantic>=2.0.0",
-    "sqlalchemy>=2.0.0",
-    "openai>=1.0.0",
-    "numpy>=1.20.0",
-    "click>=8.0.0",
-    "sqlite-vec>=0.1.6",
-    "typing-extensions>=4.0.0",
-    "pytest",
-    "litellm",
-    "sqlmodel",
-    "toolz",
-    "scipy",
-    "scikit-learn",
-    "fastapi>=0.100.0",
-    "uvicorn>=0.20.0",
+    "litellm"
 ]
 
+
+
 [project.optional-dependencies]
+
 dev = [
     "pytest>=7.0.0",
-    "pytest-cov>=4.0.0",
     "black>=23.0.0",
     "isort>=5.0.0",
-    "mypy>=1.0.0",
     "autoflake",
     "vulture",
 ]
 
-mcp = [
-    "fastapi>=0.100.0",
-    "uvicorn>=0.20.0",
-]
-
-docs = [
-    "mkdocs",
-    "mkdocs-git-revision-date-localized-plugin",
-    "mkdocs-rss-plugin",
-    "mkdocs-git-revision-date-localized-plugin",
-    "mkdocs-rss-plugin" ,
-    "mkdocs-blog-plugin",
-    "mkdocs-material",
-]
 
 
 [tool.hatch.build.targets.wheel]
-packages = ["recall_kit"]
+packages = ["recallkit"]
 
 [tool.hatch.build.targets.sdist]
 include = [
-    "recall_kit",
+    "recallkit",
     "tests",
     "README.md",
     "LICENSE",
@@ -76,7 +48,7 @@ include = [
 
 [tool.pyright]
 include = [
-    "recall_kit/**/*.py",
+    "recallkit/**/*.py",
     "tests/**/*.py"
 ]
 exclude = [
@@ -95,6 +67,9 @@ exclude = [
 testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_functions = ["test_*"]
+filterwarnings = [
+    "ignore::DeprecationWarning",
+]
 
 [tool.black]
 line-length = 88
@@ -105,8 +80,5 @@ profile = "black"
 line_length = 88
 
 [tool.uv]
-python = { requires-python = ">=3.11" }
 dev-dependencies = []
 
-[project.scripts]
-recall = "recall_kit.cli:main"
